@@ -1,6 +1,6 @@
 import { httpClient } from '../utils/httpClient.js';
 import { storage } from '../utils/storage.js';
-import { ANALYTICS_CONFIG } from '../config/constants.js';
+import { ANALYTICS_CONFIG, STORAGE_KEYS } from '../config/index.js';
 
 class AnalyticsService {
   constructor() {
@@ -13,7 +13,7 @@ class AnalyticsService {
   }
 
   async trackEvent(eventData) {
-    const userData = await storage.get('userData');
+    const userData = await storage.get(STORAGE_KEYS.USER_DATA);
     if (!userData?.email) return;
 
     const event = {
@@ -29,6 +29,33 @@ class AnalyticsService {
     if (this.pendingEvents.length >= ANALYTICS_CONFIG.BATCH_SIZE) {
       await this.sendPendingEvents();
     }
+  }
+
+  async trackSessionStart(accountId, domain) {
+    return this.trackEvent({
+      account_id: accountId,
+      action: ANALYTICS_CONFIG.EVENTS.SESSION_START,
+      domain
+    });
+  }
+
+  async trackSessionEnd(accountId, domain) {
+    return this.trackEvent({
+      account_id: accountId,
+      action: ANALYTICS_CONFIG.EVENTS.SESSION_END,
+      domain
+    });
+  }
+
+  async trackPageView(domain) {
+    const currentAccount = await storage.get(STORAGE_KEYS.CURRENT_ACCOUNT);
+    if (!currentAccount) return;
+
+    return this.trackEvent({
+      account_id: currentAccount.id,
+      action: ANALYTICS_CONFIG.EVENTS.PAGE_VIEW,
+      domain
+    });
   }
 
   async sendPendingEvents() {

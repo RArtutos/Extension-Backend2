@@ -4,11 +4,11 @@ services:
   frontend:
     build: ./frontend
     expose:
-      - "31000"  # Puerto interno para Nginx
+      - "31000"
     volumes:
       - ./frontend:/app
     environment:
-      - API_URL=http://backend:8000  # Llamada interna directa al backend
+      - API_URL=http://backend:8000
       - SECRET_KEY=dev-secret-key
       - ALLOWED_HOSTS=admin.artutos.us.kg
     depends_on:
@@ -17,16 +17,28 @@ services:
   backend:
     build: ./backend
     expose:
-      - "8000"  # Puerto interno para Nginx
+      - "8000"
     volumes:
       - ./backend:/app
-      - ./data:/app/data
+      - ./data:/app/data:rw
     environment:
       - SECRET_KEY=artutos123
       - ADMIN_EMAIL=admin@artutos.eu.org
       - ADMIN_PASSWORD=artutos123
       - DATA_FILE=/app/data/db.json
       - CORS_ORIGINS=https://admin.artutos.us.kg
+
+  backendE:
+    build: ./backendE
+    expose:
+      - "8001"
+    volumes:
+      - ./backendE:/app
+      - ./data:/app/data:rw
+    environment:
+      - SECRET_KEY=artutos123
+      - DATA_FILE=/app/data/db.json
+      - CORS_ORIGINS=*
 
   nginx:
     image: nginx:latest
@@ -35,7 +47,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./certs:/etc/nginx/certs  # Certificados SSL si tienes alguno
+      - ./certs:/etc/nginx/certs
     depends_on:
       - frontend
       - backend
+      - backendE
