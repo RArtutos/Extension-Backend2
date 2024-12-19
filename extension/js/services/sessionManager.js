@@ -5,32 +5,45 @@ import { cookieManager } from '../utils/cookie/cookieManager.js';
 import { analyticsService } from './analyticsService.js';
 import { deviceManager } from './deviceManager.js';
 
-class SessionManager {
+export class SessionManager {
   constructor() {
     this.pollInterval = null;
   }
 
+  async updateSessionStatus(accountId, domain = null) {
+    try {
+      // Get current session info
+      const sessionInfo = await httpClient.get(`/api/accounts/${accountId}/session`);
+      
+      // Check if we've exceeded concurrent user limit
+      if (sessionInfo.active_sessions > sessionInfo.max_concurrent_users) {
+        throw new Error('Session limit reached');
+      }
+
+      // Update session activity if domain is provided
+      if (domain) {
+        await httpClient.put(`/api/sessions/${accountId}`, { domain });
+        await analyticsService.trackPageView(domain);
+      }
+
+      return sessionInfo;
+    } catch (error) {
+      console.error('Error updating session status:', error);
+      throw error;
+    }
+  }
+
   async startSession(accountId, domain) {
     try {
-      // Verificar límites de dispositivos y sesiones
+      // Verify session and device limits
+      await this.updateSessionStatus(accountId);
+      
+      // Register device
       const userData = await storage.get('userData');
       if (!userData) {
         throw new Error('No user data found');
       }
 
-      // Verificar límite de dispositivos
-      const deviceResponse = await httpClient.get(`/api/users/${userData.email}/devices`);
-      if (deviceResponse.active_devices >= deviceResponse.max_devices) {
-        throw new Error('Maximum number of devices reached');
-      }
-
-      // Verificar límite de sesiones concurrentes
-      const sessionInfo = await httpClient.get(`/api/accounts/${accountId}/session`);
-      if (sessionInfo.active_sessions >= sessionInfo.max_concurrent_users) {
-        throw new Error('Maximum concurrent users reached');
-      }
-
-      // Registrar dispositivo y sesión
       await deviceManager.registerDevice(userData.email, accountId);
       await analyticsService.trackSessionStart(accountId, domain);
       
@@ -63,10 +76,7 @@ class SessionManager {
     
     this.pollInterval = setInterval(async () => {
       try {
-        const sessionInfo = await httpClient.get(`/api/accounts/${accountId}/session`);
-        if (sessionInfo.active_sessions > sessionInfo.max_concurrent_users) {
-          await this.cleanupCurrentSession();
-        }
+        await this.updateSessionStatus(accountId);
       } catch (error) {
         await this.cleanupCurrentSession();
       }
@@ -95,5 +105,3 @@ class SessionManager {
     return domain.startsWith('.') ? domain.substring(1) : domain;
   }
 }
-
-export const sessionManager = new SessionManager();
