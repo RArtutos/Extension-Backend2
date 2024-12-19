@@ -33,3 +33,7 @@ class AnalyticsEvent(BaseModel):
     ip_address: str
     user_agent: str
     domain: str
+
+class HeartbeatUpdate(BaseModel):
+    session_id: str
+    timestamp: datetime

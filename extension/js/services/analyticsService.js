@@ -47,6 +47,20 @@ class AnalyticsService {
     });
   }
 
+  async trackAccountSwitch(oldAccount, newAccount) {
+    if (!newAccount) return;
+    
+    return this.trackEvent({
+      account_id: newAccount.id,
+      action: ANALYTICS_CONFIG.EVENTS.ACCOUNT_SWITCH,
+      domain: this.getAccountDomain(newAccount),
+      metadata: {
+        from_account: oldAccount?.id,
+        to_account: newAccount.id
+      }
+    });
+  }
+
   async trackPageView(domain) {
     const currentAccount = await storage.get(STORAGE_KEYS.CURRENT_ACCOUNT);
     if (!currentAccount) return;
@@ -68,6 +82,7 @@ class AnalyticsService {
       await httpClient.post('/api/analytics/events/batch', events);
     } catch (error) {
       console.error('Error sending analytics events:', error);
+      // Restaurar eventos fallidos
       this.pendingEvents.push(...events);
     }
   }
@@ -78,8 +93,15 @@ class AnalyticsService {
       const data = await response.json();
       return data.ip;
     } catch (error) {
+      console.error('Error getting IP address:', error);
       return '0.0.0.0';
     }
+  }
+
+  getAccountDomain(account) {
+    if (!account?.cookies?.length) return null;
+    const domain = account.cookies[0].domain;
+    return domain.startsWith('.') ? domain.substring(1) : domain;
   }
 }
 

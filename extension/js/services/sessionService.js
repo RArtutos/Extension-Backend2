@@ -5,6 +5,11 @@ import { analyticsService } from './analyticsService.js';
 import { STORAGE_KEYS } from '../config/constants.js';
 
 class SessionService {
+  constructor() {
+    this.heartbeatInterval = null;
+    this.HEARTBEAT_INTERVAL = 60000; // 1 minuto
+  }
+
   async startSession(accountId, domain) {
     try {
       const deviceId = await deviceManager.getDeviceId();
@@ -19,6 +24,9 @@ class SessionService {
       const response = await httpClient.post('/api/sessions', sessionData);
       await storage.set('currentSession', response);
       
+      // Iniciar heartbeat
+      this.startHeartbeat(response.id);
+
       await analyticsService.trackEvent({
         account_id: accountId,
         action: 'session_start',
@@ -37,6 +45,9 @@ class SessionService {
       const currentSession = await storage.get('currentSession');
       if (!currentSession) return;
 
+      // Detener heartbeat
+      this.stopHeartbeat();
+
       await httpClient.delete(`/api/sessions/${currentSession.id}`);
       await storage.remove('currentSession');
 
@@ -48,6 +59,28 @@ class SessionService {
     } catch (error) {
       console.error('Error ending session:', error);
       throw error;
+    }
+  }
+
+  startHeartbeat(sessionId) {
+    this.stopHeartbeat(); // Limpiar intervalo existente si lo hay
+    
+    this.heartbeatInterval = setInterval(async () => {
+      try {
+        await httpClient.post(`/api/sessions/${sessionId}/heartbeat`);
+      } catch (error) {
+        console.error('Heartbeat failed:', error);
+        if (error.response?.status === 404) {
+          this.stopHeartbeat();
+        }
+      }
+    }, this.HEARTBEAT_INTERVAL);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
   }
 

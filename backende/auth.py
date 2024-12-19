@@ -7,8 +7,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from models import User
 from database import Database
 
-# Security configuration
-SECRET_KEY = "your-secret-key-here"  # Change this in production!
+# Configuración de seguridad
+SECRET_KEY = "artutos123"  # Usar el mismo valor que en el environment
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -16,7 +16,11 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str):
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        print(f"Error verificando contraseña: {e}")
+        return False
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
@@ -47,5 +51,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     user = db.get_user(email)
     if user is None:
         raise credentials_exception
+    
+    # Asegurarse de que el usuario tenga todos los campos necesarios
+    user.setdefault("is_active", True)
+    user.setdefault("is_admin", False)
+    user.setdefault("created_at", datetime.utcnow().isoformat())
+    user.setdefault("max_devices", 1)
+    user.setdefault("active_sessions", 0)
+    user.setdefault("email", email)
     
     return User(**user)
