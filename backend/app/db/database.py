@@ -6,6 +6,7 @@ from .repositories.user_account_repository import UserAccountRepository
 from .repositories.preset_repository import PresetRepository
 from .repositories.analytics_repository import AnalyticsRepository
 from .repositories.session_repository import SessionRepository
+from .repositories.device_repository import DeviceRepository
 
 class Database:
     def __init__(self):
@@ -15,6 +16,7 @@ class Database:
         self.presets = PresetRepository()
         self.analytics = AnalyticsRepository()
         self.sessions = SessionRepository()
+        self.devices = DeviceRepository()
 
     # Delegate methods to appropriate repositories
     def get_user_by_email(self, email: str) -> Optional[Dict]:
@@ -107,3 +109,17 @@ class Database:
 
     def remove_account_from_user(self, user_id: str, account_id: int) -> bool:
         return self.user_accounts.remove_account(user_id, account_id)
+
+
+
+    def get_user_devices(self, user_id: str) -> List[Dict]:
+        """Get all devices for a user"""
+        return self.devices.get_user_devices(user_id)
+
+    def register_device(self, device_data: Dict) -> Dict:
+        """Register a new device"""
+        return self.devices.register_device(device_data)
+
+    def unregister_device(self, device_id: str, user_id: str) -> bool:
+        """Unregister a device"""
+        return self.devices.unregister_device(device_id, user_id)
