@@ -24,32 +24,44 @@ db = Database()
 @app.post("/api/auth/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = db.get_user(form_data.username)
-    if not user or not verify_password(form_data.password, user["password"]):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password"
+        )
+
+    if not verify_password(form_data.password, user.get("password", "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
     
+    # Asegurarse de que el usuario tenga todos los campos necesarios
+    user.setdefault("is_active", True)
     if not user["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled"
         )
         
-    # Check max devices
+    user.setdefault("max_devices", 1)
+    user.setdefault("active_sessions", 0)
+    
+    # Verificar máximo de dispositivos
     if user["active_sessions"] >= user["max_devices"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Maximum number of devices reached"
         )
     
-    # Update active sessions
+    # Actualizar sesiones activas
     db.update_user_sessions(form_data.username, user["active_sessions"] + 1)
     
-    # Create access token
+    # Crear token de acceso
     access_token = create_access_token(data={"sub": form_data.username})
     
     return {"access_token": access_token, "token_type": "bearer"}
+
 
 @app.get("/api/accounts")
 async def get_accounts(current_user: User = Depends(get_current_user)):
