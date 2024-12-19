@@ -28,17 +28,18 @@ services:
       - DATA_FILE=/app/data/db.json
       - CORS_ORIGINS=https://admin.artutos.us.kg
 
-  backendE:
-    build: ./backendE
+  backende:
+    build: ./backende
     expose:
       - "8001"
     volumes:
-      - ./backendE:/app
+      - ./backende:/app
       - ./data:/app/data:rw
     environment:
       - SECRET_KEY=artutos123
       - DATA_FILE=/app/data/db.json
       - CORS_ORIGINS=*
+    restart: always
 
   nginx:
     image: nginx:latest
@@ -51,4 +52,4 @@ services:
     depends_on:
       - frontend
       - backend
-      - backendE
+      - backende
