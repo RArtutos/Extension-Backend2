@@ -29,16 +29,21 @@ class AccountService {
       }
 
       // End current session if exists
-      await sessionService.endSession();
+      const currentAccount = await this.getCurrentAccount();
+      if (currentAccount) {
+        await this.deactivateAccount(currentAccount.id);
+      }
 
       // Remove current cookies
-      const currentAccount = await this.getCurrentAccount();
       if (currentAccount) {
         await cookieManager.removeAccountCookies(currentAccount);
       }
 
       // Set new cookies
       await cookieManager.setAccountCookies(account);
+
+      // Activate new account session
+      await this.activateAccount(account.id);
 
       // Start new session
       const domain = this.getAccountDomain(account);
@@ -55,6 +60,24 @@ class AccountService {
       return true;
     } catch (error) {
       console.error('Error switching account:', error);
+      throw error;
+    }
+  }
+
+  async activateAccount(accountId) {
+    try {
+      await httpClient.post(`/api/accounts/${accountId}/activate`);
+    } catch (error) {
+      console.error('Error activating account:', error);
+      throw error;
+    }
+  }
+
+  async deactivateAccount(accountId) {
+    try {
+      await httpClient.post(`/api/accounts/${accountId}/deactivate`);
+    } catch (error) {
+      console.error('Error deactivating account:', error);
       throw error;
     }
   }

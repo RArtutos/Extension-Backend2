@@ -7,7 +7,7 @@ class Database:
     def __init__(self):
         self.file_path = os.getenv('DATA_FILE', '/app/data/db.json')
         self.data = self._load_data()
-        self.cleanup_interval = timedelta(minutes=5)  # Tiempo sin heartbeat antes de limpiar
+        self.cleanup_interval = timedelta(minutes=5)
         self.last_cleanup = datetime.now()
 
     def _load_data(self) -> Dict[str, Any]:
@@ -143,3 +143,22 @@ class Database:
     def create_analytics_event(self, event_data: Dict):
         self.data["analytics"].append(event_data)
         self._save_data()
+
+    def increment_account_sessions(self, account_id: int) -> bool:
+        for account in self.data["accounts"]:
+            if account["id"] == account_id:
+                active_sessions = account.get("active_sessions", 0)
+                account["active_sessions"] = active_sessions + 1
+                self._save_data()
+                return True
+        return False
+
+    def decrement_account_sessions(self, account_id: int) -> bool:
+        for account in self.data["accounts"]:
+            if account["id"] == account_id:
+                active_sessions = account.get("active_sessions", 0)
+                account["active_sessions"] = max(0, active_sessions - 1)
+                self._save_data()
+                return True
+        return False
+

@@ -71,6 +71,43 @@ async def get_accounts(current_user: User = Depends(get_current_user)):
 
     return accounts
 
+@app.post("/api/accounts/{account_id}/activate")
+async def activate_account(
+    account_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    if not db.verify_user_account_access(current_user.email, account_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    account = db.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    active_sessions = db.get_account_active_sessions(account_id)
+    if active_sessions >= account["max_concurrent_users"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Maximum concurrent users reached"
+        )
+
+    db.increment_account_sessions(account_id)
+    return {"status": "success"}
+
+@app.post("/api/accounts/{account_id}/deactivate")
+async def deactivate_account(
+    account_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    if not db.verify_user_account_access(current_user.email, account_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    account = db.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    db.decrement_account_sessions(account_id)
+    return {"status": "success"}
+
 @app.get("/api/accounts/{account_id}/session")
 async def get_session_info(
     account_id: int,
@@ -89,6 +126,7 @@ async def get_session_info(
         "active_sessions": active_sessions,
         "max_concurrent_users": account["max_concurrent_users"]
     }
+
 
 @app.post("/api/sessions")
 async def create_session(
