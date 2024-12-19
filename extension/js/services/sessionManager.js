@@ -4,6 +4,8 @@ import { httpClient } from '../utils/httpClient.js';
 import { cookieManager } from '../utils/cookie/cookieManager.js';
 import { analyticsService } from './analyticsService.js';
 import { deviceManager } from './deviceManager.js';
+import { deviceService } from './device/deviceService.js';
+
 
 export class SessionManager {
   constructor() {
