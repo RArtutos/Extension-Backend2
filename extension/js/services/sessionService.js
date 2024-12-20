@@ -10,14 +10,13 @@ class SessionService {
 
   async startSession(accountId, domain) {
     try {
-      // Check session limits first
-      const sessionInfo = await this.getSessionInfo(accountId);
-      if (sessionInfo.active_sessions >= sessionInfo.max_concurrent_users) {
-        throw new Error(`Maximum concurrent users (${sessionInfo.max_concurrent_users}) reached`);
+      // Verificar y registrar acceso
+      const response = await httpClient.get(`/api/accounts/${accountId}/access?domain=${domain}`);
+      
+      if (response.active_users >= response.max_users) {
+        throw new Error(`Maximum concurrent users (${response.max_users}) reached`);
       }
 
-      // Track session start
-      await analyticsService.trackSessionStart(accountId, domain);
       this.startInactivityTimer(domain, accountId);
       return true;
     } catch (error) {
@@ -26,39 +25,14 @@ class SessionService {
     }
   }
 
-  async updateSession(accountId, domain) {
+  async endSession(accountId) {
     try {
-      // Solo verificamos el estado de la sesión
-      const sessionInfo = await this.getSessionInfo(accountId);
-      if (sessionInfo.active_sessions <= sessionInfo.max_concurrent_users) {
-        await analyticsService.trackPageView(domain);
-        this.startInactivityTimer(domain, accountId);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error updating session:', error);
-      return false;
-    }
-  }
-
-  async endSession(accountId, domain) {
-    try {
-      await analyticsService.trackSessionEnd(accountId, domain);
-      this.clearInactivityTimer(domain);
+      await httpClient.post(`/api/accounts/${accountId}/logout`);
+      this.clearAllTimers();
       return true;
     } catch (error) {
       console.error('Error ending session:', error);
       return false;
-    }
-  }
-
-  async getSessionInfo(accountId) {
-    try {
-      return await httpClient.get(`/api/accounts/${accountId}/session`);
-    } catch (error) {
-      console.error('Error getting session info:', error);
-      throw error;
     }
   }
 
@@ -78,9 +52,14 @@ class SessionService {
     }
   }
 
+  clearAllTimers() {
+    this.activeTimers.forEach(timer => clearTimeout(timer));
+    this.activeTimers.clear();
+  }
+
   async handleInactivity(domain, accountId) {
     this.clearInactivityTimer(domain);
-    await this.endSession(accountId, domain);
+    await this.endSession(accountId);
   }
 }
 

@@ -1,6 +1,7 @@
 import { API_URL } from '../config/constants.js';
 import { storage } from '../utils/storage.js';
 import { STORAGE_KEYS } from '../config/constants.js';
+import { sessionService } from './sessionService.js';
 
 class AuthService {
   async login(email, password) {
@@ -14,7 +15,8 @@ class AuthService {
       });
 
       if (!response.ok) {
-        throw new Error('Invalid credentials');
+        const data = await response.json();
+        throw new Error(data.detail || 'Invalid credentials');
       }
 
       const data = await response.json();
@@ -31,7 +33,24 @@ class AuthService {
   }
 
   async logout() {
-    await storage.remove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.CURRENT_ACCOUNT]);
+    try {
+      const currentAccount = await storage.get(STORAGE_KEYS.CURRENT_ACCOUNT);
+      if (currentAccount) {
+        await sessionService.endSession(currentAccount.id);
+      }
+      
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${await storage.get(STORAGE_KEYS.TOKEN)}`
+        }
+      });
+      
+      await storage.remove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.CURRENT_ACCOUNT]);
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
   }
 
   async getToken() {

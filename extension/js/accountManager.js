@@ -1,8 +1,6 @@
 import { accountService } from './services/accountService.js';
-import { sessionManager } from './services/sessionManagerInstance.js'; // Updated import path
+import { sessionService } from './services/sessionService.js';
 import { cookieManager } from './utils/cookie/cookieManager.js';
-import { analyticsService } from './services/analyticsService.js';
-import { ui } from './utils/ui.js';
 import { storage } from './utils/storage.js';
 
 class AccountManager {
@@ -12,61 +10,29 @@ class AccountManager {
   }
 
   initializeEventListeners() {
-    // Monitor tab activity
-    chrome.tabs.onActivated.addListener(async (activeInfo) => {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      if (tab.url) {
-        const domain = new URL(tab.url).hostname;
-        await this.handleTabActivity(domain);
-      }
-    });
-
-    // Monitor URL changes
-    chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-      if (changeInfo.url) {
-        const domain = new URL(changeInfo.url).hostname;
-        await this.handleTabActivity(domain);
-      }
+    // Monitor tab closures
+    chrome.tabs.onRemoved.addListener(async (tabId) => {
+      await this.handleTabClose(tabId);
     });
 
     // Monitor browser close
     chrome.runtime.onSuspend.addListener(async () => {
-      await sessionManager.cleanupCurrentSession();
+      await this.cleanupCurrentSession();
     });
-  }
-
-  async handleTabActivity(domain) {
-    const currentAccount = await storage.get('currentAccount');
-    if (!currentAccount) return;
-
-    try {
-      await sessionManager.updateSessionStatus(currentAccount.id);
-      await analyticsService.trackPageView(domain);
-    } catch (error) {
-      console.error('Error handling tab activity:', error);
-      if (error.message.includes('Session limit reached')) {
-        await sessionManager.cleanupCurrentSession();
-        ui.showError('Session expired: maximum concurrent users reached');
-      }
-    }
   }
 
   async switchAccount(account) {
     try {
       // End current session if exists
-      await sessionManager.cleanupCurrentSession();
-
-      // Check session limits
-      await sessionManager.updateSessionStatus(account.id);
-
-      // Set new cookies
-      await cookieManager.setAccountCookies(account);
+      if (this.currentAccount) {
+        await sessionService.endSession(this.currentAccount.id);
+      }
 
       // Start new session
       const domain = this.getFirstDomain(account);
       if (domain) {
-        await sessionManager.startSession(account.id, domain);
-        await analyticsService.trackAccountSwitch(this.currentAccount, account);
+        await sessionService.startSession(account.id, domain);
+        await cookieManager.setAccountCookies(account);
         
         // Store current account
         await storage.set('currentAccount', account);
@@ -76,16 +42,49 @@ class AccountManager {
         chrome.tabs.create({ url: `https://${domain}` });
       }
 
-      ui.showSuccess('Account switched successfully');
-
-      // Refresh accounts list
-      const accounts = await accountService.getAccounts();
-      ui.updateAccountsList(accounts, account);
-
+      return true;
     } catch (error) {
       console.error('Error switching account:', error);
-      ui.showError(error.message || 'Error switching account');
       throw error;
+    }
+  }
+
+  async handleTabClose(tabId) {
+    try {
+      const currentAccount = await storage.get('currentAccount');
+      if (!currentAccount) return;
+
+      const tabs = await chrome.tabs.query({});
+      const accountDomains = currentAccount.cookies.map(c => c.domain.replace(/^\./, ''));
+      
+      // Check if any domain is still open
+      const hasOpenTabs = tabs.some(tab => {
+        if (!tab.url) return false;
+        const tabDomain = new URL(tab.url).hostname;
+        return accountDomains.some(domain => 
+          tabDomain === domain || tabDomain.endsWith('.' + domain)
+        );
+      });
+
+      if (!hasOpenTabs) {
+        await this.cleanupCurrentSession();
+      }
+    } catch (error) {
+      console.error('Error handling tab close:', error);
+    }
+  }
+
+  async cleanupCurrentSession() {
+    try {
+      const currentAccount = await storage.get('currentAccount');
+      if (currentAccount) {
+        await sessionService.endSession(currentAccount.id);
+        await cookieManager.removeAccountCookies(currentAccount);
+        await storage.remove('currentAccount');
+        this.currentAccount = null;
+      }
+    } catch (error) {
+      console.error('Error cleaning up session:', error);
     }
   }
 

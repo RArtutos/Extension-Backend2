@@ -1,15 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from ..core.auth import verify_password, create_access_token, get_password_hash, decode_access_token
+from ..core.auth import (
+    verify_password, 
+    create_access_token, 
+    get_password_hash, 
+    decode_access_token,
+    get_current_user
+)
 from ..core.config import settings
 from ..db.database import Database
+from datetime import datetime
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 db = Database()
 
 @router.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     user = db.get_user_by_email(form_data.username)
     if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(
@@ -17,27 +24,47 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect email or password"
         )
     
+    # Verificar límite de dispositivos
+    if user["active_sessions"] >= user.get("max_devices", 1):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum number of devices reached"
+        )
+    
+    # Incrementar active_sessions
+    db.users.update_active_sessions(user["email"], user["active_sessions"] + 1)
+    
+    # Registrar analítica de login
+    db.analytics.create_activity({
+        "user_id": user["email"],
+        "action": "login",
+        "timestamp": datetime.utcnow().isoformat(),
+        "ip_address": request.client.host,
+        "user_agent": request.headers.get("user-agent")
+    })
+    
     access_token = create_access_token(data={"sub": user["email"], "is_admin": user.get("is_admin", False)})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.get("/validate")
-async def validate_token(token: str = Depends(oauth2_scheme)):
-    """Validate access token and return user info"""
-    payload = decode_access_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
+@router.post("/logout")
+async def logout(current_user: dict = Depends(get_current_user)):
+    # Decrementar active_sessions
+    db.users.update_active_sessions(current_user["email"], max(0, current_user["active_sessions"] - 1))
     
-    user = db.get_user_by_email(payload["sub"])
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-        
+    # Registrar analítica de logout
+    db.analytics.create_activity({
+        "user_id": current_user["email"],
+        "action": "logout",
+        "timestamp": datetime.utcnow().isoformat()
+    })
+    
+    return {"message": "Logged out successfully"}
+
+@router.get("/validate")
+async def validate_token(current_user: dict = Depends(get_current_user)):
     return {
-        "email": user["email"],
-        "is_admin": user.get("is_admin", False)
+        "email": current_user["email"],
+        "is_admin": current_user.get("is_admin", False),
+        "active_sessions": current_user.get("active_sessions", 0),
+        "max_devices": current_user.get("max_devices", 1)
     }
