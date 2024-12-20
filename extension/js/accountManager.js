@@ -1,6 +1,7 @@
 import { accountService } from './services/accountService.js';
 import { cookieManager } from './utils/cookie/cookieManager.js';
 import { storage } from './utils/storage.js';
+import { analyticsService } from './services/analyticsService.js';
 
 class AccountManager {
     constructor() {
@@ -9,12 +10,10 @@ class AccountManager {
     }
 
     initializeEventListeners() {
-        // Monitor tab closures
         chrome.tabs.onRemoved.addListener(async (tabId) => {
             await this.handleTabClose(tabId);
         });
 
-        // Monitor browser close
         chrome.runtime.onSuspend.addListener(async () => {
             await this.cleanupCurrentSession();
         });
@@ -22,20 +21,15 @@ class AccountManager {
 
     async switchAccount(newAccount) {
         try {
+            console.log('Switching to account:', newAccount);
             const currentAccount = await storage.get('currentAccount');
             
-            // Si hay una cuenta actual, verificar si es del mismo dominio
+            // Si hay una cuenta actual, limpiar sus cookies primero
             if (currentAccount) {
-                const currentDomain = this.getAccountDomain(currentAccount);
-                const newDomain = this.getAccountDomain(newAccount);
-                
-                if (currentDomain === newDomain) {
-                    // Decrementar usuarios activos de la cuenta actual
-                    await accountService.decrementActiveUsers(currentAccount.id);
-                }
-                
-                // Limpiar cookies del dominio actual
-                await cookieManager.removeAllCookiesForDomain(currentDomain);
+                console.log('Removing cookies for current account:', currentAccount);
+                await cookieManager.removeAccountCookies(currentAccount);
+                // Decrementar usuarios activos de la cuenta actual
+                await accountService.decrementActiveUsers(currentAccount.id);
             }
 
             // Incrementar usuarios activos de la nueva cuenta
@@ -44,6 +38,7 @@ class AccountManager {
                 throw new Error('Maximum concurrent users reached');
             }
 
+            console.log('Setting cookies for new account:', newAccount);
             // Establecer cookies de la nueva cuenta
             await cookieManager.setAccountCookies(newAccount);
             
@@ -51,9 +46,14 @@ class AccountManager {
             await storage.set('currentAccount', newAccount);
             this.currentAccount = newAccount;
 
+            // Registrar el cambio en analytics
+            await analyticsService.trackAccountSwitch(currentAccount, newAccount);
+
             return true;
         } catch (error) {
             console.error('Error switching account:', error);
+            // Si algo falla, intentar revertir el incremento de usuarios activos
+            await accountService.decrementActiveUsers(newAccount.id);
             throw error;
         }
     }
@@ -66,7 +66,6 @@ class AccountManager {
             const tabs = await chrome.tabs.query({});
             const accountDomains = currentAccount.cookies.map(c => c.domain.replace(/^\./, ''));
             
-            // Check if any domain is still open
             const hasOpenTabs = tabs.some(tab => {
                 if (!tab.url) return false;
                 const tabDomain = new URL(tab.url).hostname;
@@ -87,7 +86,7 @@ class AccountManager {
         try {
             const currentAccount = await storage.get('currentAccount');
             if (currentAccount) {
-                await sessionService.endSession(currentAccount.id);
+                await accountService.decrementActiveUsers(currentAccount.id);
                 await cookieManager.removeAccountCookies(currentAccount);
                 await storage.remove('currentAccount');
                 this.currentAccount = null;
@@ -95,12 +94,6 @@ class AccountManager {
         } catch (error) {
             console.error('Error cleaning up session:', error);
         }
-    }
-
-    getAccountDomain(account) {
-        if (!account?.cookies?.length) return null;
-        const domain = account.cookies[0].domain;
-        return domain.startsWith('.') ? domain.substring(1) : domain;
     }
 }
 

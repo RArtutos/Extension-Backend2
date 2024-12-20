@@ -277,10 +277,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'SET_MANAGED_DOMAINS') {
     cookieManager.managedDomains = new Set(request.domains);
     chrome.storage.local.set({
-      managedDomains: Array.from(cookieManager.managedDomains),
+      managedDomains: Array.from(cookieManager.managedDomains)
+    }).then(() => {
+      sendResponse({ success: true });
     });
-    sendResponse({ success: true });
-    return true;
+    return true; // Indica que la respuesta será asíncrona
   }
 });
 

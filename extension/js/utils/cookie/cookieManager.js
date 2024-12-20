@@ -13,12 +13,14 @@ class CookieManager {
     }
 
     try {
+      console.log('Setting cookies for account:', account);
       const domains = [];
       
       for (const cookie of account.cookies) {
         const domain = cookie.domain;
         domains.push(domain);
         
+        console.log(`Processing cookies for domain: ${domain}`);
         await this.removeAllCookiesForDomain(domain);
 
         if (cookie.name === 'header_cookies') {
@@ -28,10 +30,9 @@ class CookieManager {
         }
       }
 
-      chrome.runtime.sendMessage({
-        type: 'SET_MANAGED_DOMAINS',
-        domains
-      });
+      this.managedDomains = new Set(domains);
+      await chrome.storage.local.set({ managedDomains: Array.from(this.managedDomains) });
+      console.log('Successfully set all cookies');
 
     } catch (error) {
       console.error('Error setting account cookies:', error);
@@ -42,6 +43,7 @@ class CookieManager {
   async removeAccountCookies(account) {
     if (!account?.cookies?.length) return;
     
+    console.log('Removing cookies for account:', account);
     for (const cookie of account.cookies) {
       await this.removeAllCookiesForDomain(cookie.domain);
     }
@@ -49,18 +51,25 @@ class CookieManager {
 
   async removeAllCookiesForDomain(domain) {
     const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
+    console.log(`Removing all cookies for domain: ${cleanDomain}`);
+    
     try {
       const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
+      console.log(`Found ${cookies.length} cookies to remove`);
       
       for (const cookie of cookies) {
+        const protocol = cookie.secure ? 'https://' : 'http://';
+        const cookieUrl = `${protocol}${cookie.domain}${cookie.path}`;
+        
         try {
           await chrome.cookies.remove({
-            url: `https://${cleanDomain}${cookie.path}`,
+            url: cookieUrl,
             name: cookie.name,
             storeId: cookie.storeId
           });
+          console.log(`Successfully removed cookie: ${cookie.name}`);
         } catch (error) {
-          console.warn(`Error removing cookie ${cookie.name}:`, error);
+          console.error(`Error removing cookie ${cookie.name}:`, error);
         }
       }
 
@@ -75,6 +84,8 @@ class CookieManager {
     const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
     const url = `https://${cleanDomain}`;
     
+    console.log(`Setting cookie: ${name} for domain: ${domain}`);
+    
     try {
       await chrome.cookies.set({
         url,
@@ -85,6 +96,7 @@ class CookieManager {
         secure: true,
         sameSite: 'lax'
       });
+      console.log(`Successfully set cookie: ${name}`);
     } catch (error) {
       console.warn(`Error setting cookie ${name}, retrying with alternative settings:`, error);
       try {
@@ -97,6 +109,7 @@ class CookieManager {
           secure: false,
           sameSite: 'no_restriction'
         });
+        console.log(`Successfully set cookie: ${name} with alternative settings`);
       } catch (retryError) {
         console.error(`Failed to set cookie ${name} after retry:`, retryError);
         throw retryError;
@@ -107,6 +120,7 @@ class CookieManager {
   async setHeaderCookies(domain, cookieString) {
     if (!cookieString) return;
     
+    console.log(`Setting header cookies for domain: ${domain}`);
     const cookies = this.parseHeaderString(cookieString);
     for (const cookie of cookies) {
       await this.setCookie(domain, cookie.name, cookie.value);
