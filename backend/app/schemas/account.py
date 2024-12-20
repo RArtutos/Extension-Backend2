@@ -11,7 +11,8 @@ class AccountBase(BaseModel):
     name: str
     group: Optional[str] = None
     cookies: List[Cookie] = Field(default_factory=list)
-    max_concurrent_users: conint(ge=1) = 1  # Ensure at least 1 concurrent user
+    max_concurrent_users: conint(ge=1) = 1
+    active_users: int = Field(default=0, description="Number of currently active users")
 
 class AccountCreate(AccountBase):
     pass

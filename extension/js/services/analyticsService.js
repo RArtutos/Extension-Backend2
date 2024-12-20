@@ -2,7 +2,6 @@ import { ANALYTICS_CONFIG } from '../config/constants.js';
 import { storage } from '../utils/storage.js';
 import { httpClient } from '../utils/httpClient.js';
 
-// Analytics service implementation
 class AnalyticsService {
   constructor() {
     this.pendingEvents = [];
@@ -11,7 +10,6 @@ class AnalyticsService {
   }
 
   async initializeTracking() {
-    // Flush events periodically
     setInterval(() => this.sendPendingEvents(), ANALYTICS_CONFIG.TRACKING_INTERVAL);
   }
 
@@ -25,14 +23,12 @@ class AnalyticsService {
       const userData = await storage.get('userData');
       if (!userData?.email) return;
 
-      // Send events in batch
       await httpClient.post(`/api/analytics/events/batch`, {
         user_id: userData.email,
         events: events
       });
     } catch (error) {
       console.error('Error sending analytics events:', error);
-      // Re-add failed events back to the queue
       this.pendingEvents.push(...events);
     }
   }
@@ -61,7 +57,6 @@ class AnalyticsService {
 
     this.pendingEvents.push(event);
 
-    // If we have enough events, send them immediately
     if (this.pendingEvents.length >= ANALYTICS_CONFIG.BATCH_SIZE) {
       await this.sendPendingEvents();
     }
@@ -101,7 +96,17 @@ class AnalyticsService {
       action: 'end'
     });
   }
+
+  async cleanupDomainAnalytics(domain) {
+    try {
+      const userData = await storage.get('userData');
+      if (!userData?.email) return;
+
+      await httpClient.delete(`/api/analytics/domain/${encodeURIComponent(domain)}`);
+    } catch (error) {
+      console.error('Error cleaning up domain analytics:', error);
+    }
+  }
 }
 
-// Create and export a singleton instance
 export const analyticsService = new AnalyticsService();

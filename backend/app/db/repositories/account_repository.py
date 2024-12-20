@@ -1,4 +1,5 @@
 from typing import List, Dict, Optional
+from datetime import datetime
 from ..base import BaseRepository
 from ...core.config import settings
 
@@ -110,3 +111,43 @@ class AccountRepository(BaseRepository):
             self._write_data(data)
             return True
         return False
+
+    # Methods from the second fragment
+    def increment_active_users(self, account_id: int) -> bool:
+        """Increment active users count for an account"""
+        data = self._read_data()
+        account = next(
+            (acc for acc in data.get("accounts", []) if acc["id"] == account_id),
+            None
+        )
+        
+        if account:
+            if "active_users" not in account:
+                account["active_users"] = 0
+            if account["active_users"] < account.get("max_concurrent_users", 1):
+                account["active_users"] += 1
+                self._write_data(data)
+                return True
+        return False
+
+    def decrement_active_users(self, account_id: int) -> bool:
+        """Decrement active users count for an account"""
+        data = self._read_data()
+        account = next(
+            (acc for acc in data.get("accounts", []) if acc["id"] == account_id),
+            None
+        )
+        
+        if account and account.get("active_users", 0) > 0:
+            account["active_users"] = max(0, account["active_users"] - 1)
+            self._write_data(data)
+            return True
+        return False
+
+    def get_accounts_by_domain(self, domain: str) -> List[Dict]:
+        """Get all accounts that have cookies for a specific domain"""
+        data = self._read_data()
+        return [
+            acc for acc in data.get("accounts", [])
+            if any(cookie["domain"] == domain for cookie in acc.get("cookies", []))
+        ]

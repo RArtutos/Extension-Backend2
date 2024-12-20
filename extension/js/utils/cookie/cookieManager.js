@@ -1,4 +1,5 @@
 import { storage } from '../storage.js';
+import { analyticsService } from '../../services/analyticsService.js';
 
 class CookieManager {
   constructor() {
@@ -18,7 +19,6 @@ class CookieManager {
         const domain = cookie.domain;
         domains.push(domain);
         
-        // Remove existing cookies first
         await this.removeAllCookiesForDomain(domain);
 
         if (cookie.name === 'header_cookies') {
@@ -28,7 +28,6 @@ class CookieManager {
         }
       }
 
-      // Update managed domains in background
       chrome.runtime.sendMessage({
         type: 'SET_MANAGED_DOMAINS',
         domains
@@ -64,6 +63,9 @@ class CookieManager {
           console.warn(`Error removing cookie ${cookie.name}:`, error);
         }
       }
+
+      // Cleanup analytics after removing cookies
+      await analyticsService.cleanupDomainAnalytics(cleanDomain);
     } catch (error) {
       console.error(`Error removing cookies for domain ${domain}:`, error);
     }

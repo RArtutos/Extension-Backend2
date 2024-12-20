@@ -139,3 +139,30 @@ async def logout_account(
     db.analytics.record_account_logout(current_user["email"], account_id)
     
     return {"success": True, "message": "Logged out successfully"}
+
+# Añadir nuevos endpoints del segundo código
+@router.post("/{account_id}/active")
+async def increment_active_users(
+    account_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Increment active users count"""
+    if db.accounts.increment_active_users(account_id):
+        return {"success": True, "message": "Active users incremented"}
+    raise HTTPException(
+        status_code=400,
+        detail="Failed to increment active users"
+    )
+
+@router.delete("/{account_id}/active")
+async def decrement_active_users(
+    account_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Decrement active users count"""
+    if db.accounts.decrement_active_users(account_id):
+        return {"success": True, "message": "Active users decremented"}
+    raise HTTPException(
+        status_code=400,
+        detail="Failed to decrement active users"
+    )

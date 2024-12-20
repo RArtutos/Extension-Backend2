@@ -108,20 +108,29 @@ class AnalyticsRepository(BaseRepository):
         active_users = set()
         
         for activity in data.get("analytics", []):
-            if (activity["account_id"] == account_id and 
-                activity["action"] == "account_access" and
+            # Solo procesar actividades que tengan account_id y coincida con el solicitado
+            if (activity.get("account_id") == account_id and 
+                activity.get("action") == "account_access" and
                 not self._has_logout_after(activity, data["analytics"])):
-                active_users.add(activity["user_id"])
+                active_users.add(activity.get("user_id"))
                 
         return len(active_users)
 
     def _has_logout_after(self, activity: Dict, activities: List[Dict]) -> bool:
         """Check if user has logged out after this activity"""
+        if not activity.get("timestamp"):
+            return False
+            
         activity_time = datetime.fromisoformat(activity["timestamp"])
+        user_id = activity.get("user_id")
+        
+        if not user_id:
+            return False
         
         for other in activities:
-            if (other["user_id"] == activity["user_id"] and 
-                other["action"] == "account_logout" and
+            if (other.get("user_id") == user_id and 
+                other.get("action") == "account_logout" and
+                other.get("timestamp") and
                 datetime.fromisoformat(other["timestamp"]) > activity_time):
                 return True
                 

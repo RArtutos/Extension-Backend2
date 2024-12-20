@@ -42,6 +42,27 @@ class AccountService {
       throw new Error('Failed to get session information');
     }
   }
+
+  // New methods added
+  async incrementActiveUsers(accountId) {
+    try {
+      const response = await httpClient.post(`/api/accounts/${accountId}/active`);
+      return response.success;
+    } catch (error) {
+      console.error('Error incrementing active users:', error);
+      return false;
+    }
+  }
+
+  async decrementActiveUsers(accountId) {
+    try {
+      const response = await httpClient.delete(`/api/accounts/${accountId}/active`);
+      return response.success;
+    } catch (error) {
+      console.error('Error decrementing active users:', error);
+      return false;
+    }
+  }
 }
 
 export const accountService = new AccountService();
