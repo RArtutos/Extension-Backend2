@@ -171,24 +171,30 @@ async def increment_active_users(
         detail="Failed to increment active users"
     )
 
-@router.delete("/{account_id}/active")
-async def decrement_active_users(
-    account_id: int,
+@router.delete("/sessions")
+async def remove_sessions(
+    domain: str,
+    email: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Decrement active users count"""
-    account = db.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-        
-    # Verify user has access to this account
-    user_accounts = db.get_user_accounts(current_user["email"])
-    if account_id not in user_accounts:
-        raise HTTPException(status_code=403, detail="Not authorized to access this account")
-    
-    if db.accounts.decrement_active_users(account_id):
-        return {"success": True, "message": "Active users decremented"}
-    raise HTTPException(
-        status_code=400,
-        detail="Failed to decrement active users"
-    )
+    """Remove sessions and decrement active users count"""
+    # Obtener las sesiones activas para el dominio y email
+    sessions = db.get_sessions_by_domain_and_email(domain, email)
+    if not sessions:
+        raise HTTPException(status_code=404, detail="No sessions found for the given domain and email")
+
+    account_ids = set()
+    for session in sessions:
+        account_id = session["account_id"]
+        account_ids.add(account_id)
+        # Eliminar la sesión
+        if not db.delete_session(session["id"]):
+            raise HTTPException(status_code=400, detail=f"Failed to remove session {session['id']}")
+
+    # Decrementar usuarios activos de cada cuenta
+    for account_id in account_ids:
+        if not db.accounts.decrement_active_users(account_id):
+            raise HTTPException(status_code=400, detail=f"Failed to decrement active users for account {account_id}")
+
+    return {"success": True, "message": "Sessions removed and active users decremented"}
+
