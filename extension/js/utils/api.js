@@ -13,9 +13,7 @@ class Api {
         if (!response.ok) {
             throw new Error('Invalid credentials');
         }
-        const data = await response.json();
-        chrome.storage.local.set({ userEmail: email });
-
+        
         return response.json();
     }
 

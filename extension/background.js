@@ -1,13 +1,11 @@
 const cookieManager = {
   managedDomains: new Set(),
-  sessionCheckInterval: null,
   API_URL: 'https://api.artutos.us.kg',
 
   init() {
     console.log('Inicializando cookieManager');
     this.loadManagedDomains();
     this.setupEventListeners();
-    this.startSessionCheck();
   },
 
   loadManagedDomains() {
@@ -51,64 +49,6 @@ const cookieManager = {
     if (newAccount) {
       await this.setAccountCookies(newAccount);
     }
-  },
-
-  startSessionCheck() {
-    console.log('Iniciando verificación de sesión');
-    // Verificar el estado de la sesión cada 30 segundos
-    this.sessionCheckInterval = setInterval(async () => {
-      console.log('Verificando estado de la sesión');
-      await this.checkSessionStatus();
-    }, 30000);
-  },
-
-  async checkSessionStatus() {
-    try {
-      const currentAccount = await this.getCurrentAccount();
-      if (!currentAccount) return;
-
-      const token = await this.getToken();
-      if (!token) return;
-
-      const response = await fetch(`${this.API_URL}/api/accounts/${currentAccount.id}/session`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        // Si hay un error 401 o la sesión no es válida, limpiar cookies
-        console.log('Error en la verificación de la sesión:', response.status);
-        if (response.status === 401 || response.status === 403) {
-          await this.cleanupCurrentSession();
-        }
-        return;
-      }
-
-      const sessionData = await response.json();
-      console.log('Datos de la sesión:', sessionData);
-      if (!sessionData.active || sessionData.status === 'cancelled') {
-        await this.cleanupCurrentSession();
-      }
-    } catch (error) {
-      console.error('Error checking session status:', error);
-    }
-  },
-
-  async getCurrentAccount() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['currentAccount'], (result) => {
-        resolve(result.currentAccount);
-      });
-    });
-  },
-
-  async getToken() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['token'], (result) => {
-        resolve(result.token);
-      });
-    });
   },
 
   async handleTabClose(tabId) {
@@ -174,13 +114,9 @@ const cookieManager = {
         const email = result.email;
         if (email) {
           console.log('Email encontrado:', email);
-          // Aquí se envía la solicitud DELETE a la API para decrementar usuarios activos
           const token = await this.getToken();
-          if(!token) {
-            console.error('Token no encontrado');
-            return;
-          }
-          console.log('Token obtenido:', token);
+          if(!token) return;
+          
           try {
             const response = await fetch(`${this.API_URL}/delete/sessions?email=${email}&domain=${cleanDomain}`, {
               method: 'DELETE',
@@ -190,26 +126,12 @@ const cookieManager = {
               }
             });
 
-            if (response.ok) {
-              const accountIds = await response.json();
-              console.log('IDs de cuenta eliminados:', accountIds);
-              for (const accountId of accountIds) {
-                await fetch(`${this.API_URL}/api/accounts/${accountId}/active`, {
-                  method: 'DELETE',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  }
-                });
-              }
-            } else {
+            if (!response.ok) {
               console.error('Error en la solicitud DELETE:', response.status);
             }
           } catch (error) {
             console.error('Error al enviar la solicitud DELETE:', error);
           }
-        } else {
-          console.error('Email no encontrado en el almacenamiento local');
         }
       });
     } catch (error) {
@@ -303,36 +225,12 @@ const cookieManager = {
     return cookies;
   },
 
-  async cleanupCurrentSession() {
-    try {
-      const currentAccount = await this.getCurrentAccount();
-      if (currentAccount) {
-        await this.removeCookiesForAccount(currentAccount);
-      }
-      
-      await chrome.storage.local.remove(['currentAccount', 'managedDomains']);
-      this.managedDomains.clear();
-      console.log('Sesión actual limpiada');
-
-      // Notificar al popup que la sesión ha expirado
-      chrome.runtime.sendMessage({ type: 'SESSION_EXPIRED' });
-    } catch (error) {
-      console.error('Error during session cleanup:', error);
-    }
-  },
-
-  async cleanupAllCookies() {
-    try {
-      const domains = Array.from(this.managedDomains);
-      for (const domain of domains) {
-        await this.removeCookiesForDomain(domain);
-      }
-      await chrome.storage.local.remove(['managedDomains', 'currentAccount']);
-      this.managedDomains.clear();
-      console.log('Todas las cookies limpiadas');
-    } catch (error) {
-      console.error('Error during cleanup:', error);
-    }
+  async getToken() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['token'], (result) => {
+        resolve(result.token);
+      });
+    });
   }
 };
 

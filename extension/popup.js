@@ -69,7 +69,11 @@ async handleLogin() {
       }
 
       await storage.set(STORAGE_KEYS.TOKEN, data.access_token);
-      await storage.set(STORAGE_KEYS.TOKEN, email);
+      await storage.set(STORAGE_KEYS.USER_EMAIL, email);  // Guarda el email en el almacenamiento
+
+      chrome.storage.local.set({ userEmail: email }, function() {
+          console.log('Correo electrónico guardado:', email);
+      });
 
       await this.showAccountManager();
       ui.showSuccess('Login successful');
