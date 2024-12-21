@@ -36,7 +36,10 @@ const cookieManager = {
         this.handleAccountChange(changes.currentAccount.newValue, changes.currentAccount.oldValue);
       }
       if (changes.managedDomains) {
-        this.managedDomains = new Set(changes.managedDomains.newValue || []);
+        // Mantener los dominios existentes y agregar los nuevos
+        const existingDomains = Array.from(this.managedDomains);
+        const newDomains = changes.managedDomains.newValue || [];
+        this.managedDomains = new Set([...existingDomains, ...newDomains]);
       }
     });
   },
@@ -51,7 +54,7 @@ const cookieManager = {
   async handleTabClose(tabId) {
     try {
       const tabs = await chrome.tabs.query({});
-      console.log('Pestañas abiertas:', tabs);
+      console.log('Pestañas abiertas:', tabs, 'Dominios gestionados:', this.managedDomains);
       
       // Para cada dominio gestionado
       for (const domain of this.managedDomains) {
@@ -72,6 +75,7 @@ const cookieManager = {
         if (!hasOpenTabsForDomain) {
           console.log('No hay pestañas abiertas para el dominio:', domain);
           await this.removeCookiesForDomain(domain);
+          // No eliminar el dominio del Set para mantener el tracking de todos los dominios activos
         }
       }
     } catch (error) {
@@ -163,9 +167,16 @@ const cookieManager = {
         }
       }
 
-      this.managedDomains = new Set(domains);
-      await chrome.storage.local.set({ managedDomains: Array.from(this.managedDomains) });
+      // Agregar nuevos dominios al Set existente
+      domains.forEach(domain => this.managedDomains.add(domain));
+      
+      // Actualizar storage con todos los dominios
+      await chrome.storage.local.set({ 
+        managedDomains: Array.from(this.managedDomains) 
+      });
+      
       console.log('Cookies de cuenta establecidas:', account);
+      console.log('Dominios gestionados actualizados:', this.managedDomains);
     } catch (error) {
       console.error('Error setting account cookies:', error);
     }
@@ -256,7 +267,10 @@ cookieManager.init();
 // Manejador de mensajes
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'SET_MANAGED_DOMAINS') {
-    cookieManager.managedDomains = new Set(request.domains);
+    // Mantener dominios existentes y agregar nuevos
+    const newDomains = request.domains || [];
+    newDomains.forEach(domain => cookieManager.managedDomains.add(domain));
+    
     chrome.storage.local.set({
       managedDomains: Array.from(cookieManager.managedDomains),
     });
