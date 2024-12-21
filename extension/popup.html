@@ -10,7 +10,7 @@
         <!-- Login Form -->
         <div id="login-form" class="container">
             <div class="logo">
-                <img src="icons/logo.png" alt="Logo">
+                <img src="icono.png" alt="Logo" class="logo-img">
                 <h1>Account Manager</h1>
             </div>
             <form id="login-form">
@@ -27,12 +27,15 @@
         <!-- Account Manager -->
         <div id="account-manager" class="container hidden">
             <div class="header">
-                <h2>Accounts</h2>
-                <button id="logout-btn" class="btn-secondary">Logout</button>
-            </div>
-            
-            <div class="search-bar">
-                <input type="text" id="search-accounts" placeholder="Search accounts...">
+                <div class="header-top">
+                    <img src="icon.png" alt="Logo" class="header-logo">
+                    <h2>Accounts</h2>
+                    <button id="logout-btn" class="btn-secondary">Logout</button>
+                </div>
+                <div class="search-bar">
+                    <input type="text" id="search-accounts" placeholder="Search accounts...">
+                    <div class="search-icon">🔍</div>
+                </div>
             </div>
             
             <div id="accounts-list" class="accounts-container"></div>
