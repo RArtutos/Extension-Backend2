@@ -5,16 +5,21 @@ import { STORAGE_KEYS } from '../config/constants.js';
 class AuthService {
   async login(email, password) {
     try {
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
+
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
+        body: formData.toString()
       });
 
       if (!response.ok) {
-        throw new Error('Invalid credentials');
+        const error = await response.json();
+        throw new Error(error.detail || 'Invalid credentials');
       }
 
       const data = await response.json();

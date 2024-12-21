@@ -16,7 +16,7 @@ class UI {
     const accountsList = document.getElementById('accounts-list');
     accountsList.innerHTML = accounts.map(account => {
       const isActive = currentAccount && currentAccount.id === account.id;
-      const isDisabled = account.active_sessions >= account.max_concurrent_users && !isActive;
+      const isDisabled = account.active_users >= account.max_concurrent_users && !isActive;
       
       return `
         <div class="account-item ${isActive ? 'active' : ''} ${isDisabled ? 'disabled' : ''}">
@@ -24,7 +24,7 @@ class UI {
             <div class="account-name">${account.name}</div>
             ${account.group ? `<div class="account-group">${account.group}</div>` : ''}
             <div class="session-info">
-              ${account.active_sessions || 0}/${account.max_concurrent_users || 1} users
+              ${account.active_users}/${account.max_concurrent_users} users
             </div>
           </div>
           <button class="switch-btn" 

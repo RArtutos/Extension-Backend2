@@ -7,8 +7,11 @@ from ..schemas.session import SessionCreate, Session
 router = APIRouter()
 db = Database()
 
-@router.post("/", response_model=Session)
-async def create_session(session: SessionCreate, current_user: dict = Depends(get_current_user)):
+@router.post("")  # Cambiado de "/" a "" para manejar la ruta base correctamente
+async def create_session(
+    session: SessionCreate, 
+    current_user: dict = Depends(get_current_user)
+):
     """Create a new session"""
     # Verify user has access to the account
     user_accounts = db.get_user_accounts(current_user["email"])

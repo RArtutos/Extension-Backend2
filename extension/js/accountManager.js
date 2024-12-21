@@ -1,5 +1,5 @@
 import { accountService } from './services/accountService.js';
-import { sessionManager } from './services/sessionManagerInstance.js'; // Updated import path
+import { sessionService } from './services/sessionService.js';
 import { cookieManager } from './utils/cookie/cookieManager.js';
 import { analyticsService } from './services/analyticsService.js';
 import { ui } from './utils/ui.js';
@@ -31,7 +31,12 @@ class AccountManager {
 
     // Monitor browser close
     chrome.runtime.onSuspend.addListener(async () => {
-      await sessionManager.cleanupCurrentSession();
+      await this.cleanupCurrentSession();
+    });
+
+    // Monitor tab close
+    chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+      await this.handleTabClose(tabId);
     });
   }
 
@@ -40,59 +45,96 @@ class AccountManager {
     if (!currentAccount) return;
 
     try {
-      await sessionManager.updateSessionStatus(currentAccount.id);
+      await sessionService.getSessionInfo(currentAccount.id);
       await analyticsService.trackPageView(domain);
     } catch (error) {
       console.error('Error handling tab activity:', error);
       if (error.message.includes('Session limit reached')) {
-        await sessionManager.cleanupCurrentSession();
+        await this.cleanupCurrentSession();
         ui.showError('Session expired: maximum concurrent users reached');
       }
     }
   }
 
+  async handleTabClose(tabId) {
+    const currentAccount = await storage.get('currentAccount');
+    if (!currentAccount) return;
+
+    try {
+      const tabs = await chrome.tabs.query({});
+      const accountDomains = currentAccount.cookies.map(c => c.domain);
+      
+      const hasOpenTabs = tabs.some(tab => {
+        if (!tab.url) return false;
+        const domain = new URL(tab.url).hostname;
+        return accountDomains.some(accDomain => 
+          domain === accDomain || domain.endsWith('.' + accDomain.replace(/^\./, '')));
+      });
+
+      if (!hasOpenTabs) {
+        await this.cleanupCurrentSession();
+      }
+    } catch (error) {
+      console.error('Error handling tab close:', error);
+    }
+  }
+
   async switchAccount(account) {
     try {
-      // End current session if exists
-      await sessionManager.cleanupCurrentSession();
+      const currentAccount = await storage.get('currentAccount');
+      
+      // Si hay una cuenta actual, verificar si comparten dominio
+      if (currentAccount) {
+        const currentDomains = currentAccount.cookies.map(c => c.domain);
+        const newDomains = account.cookies.map(c => c.domain);
+        const sharedDomain = currentDomains.some(d => newDomains.includes(d));
 
-      // Check session limits
-      await sessionManager.updateSessionStatus(account.id);
+        if (sharedDomain) {
+          await sessionService.switchSession(currentAccount.id, account.id, newDomains[0]);
+        } else {
+          await this.cleanupCurrentSession();
+          await sessionService.startSession(account.id, newDomains[0]);
+        }
+      } else {
+        await sessionService.startSession(account.id, account.cookies[0].domain);
+      }
 
-      // Set new cookies
+      // Establecer cookies
       await cookieManager.setAccountCookies(account);
 
-      // Start new session
-      const domain = this.getFirstDomain(account);
-      if (domain) {
-        await sessionManager.startSession(account.id, domain);
-        await analyticsService.trackAccountSwitch(this.currentAccount, account);
-        
-        // Store current account
-        await storage.set('currentAccount', account);
-        this.currentAccount = account;
+      // Actualizar storage
+      await storage.set('currentAccount', account);
+      this.currentAccount = account;
 
-        // Open domain in new tab
-        chrome.tabs.create({ url: `https://${domain}` });
-      }
+      // Abrir dominio en nueva pestaña
+      const domain = account.cookies[0].domain.replace(/^\./, '');
+      chrome.tabs.create({ url: `https://${domain}` });
 
       ui.showSuccess('Account switched successfully');
 
-      // Refresh accounts list
+      // Actualizar lista de cuentas
       const accounts = await accountService.getAccounts();
       ui.updateAccountsList(accounts, account);
 
     } catch (error) {
       console.error('Error switching account:', error);
-      ui.showError(error.message || 'Error switching account');
+      ui.showError(error.message);
       throw error;
     }
   }
 
-  getFirstDomain(account) {
-    if (!account?.cookies?.length) return null;
-    const domain = account.cookies[0].domain;
-    return domain.startsWith('.') ? domain.substring(1) : domain;
+  async cleanupCurrentSession() {
+    try {
+      const currentAccount = await storage.get('currentAccount');
+      if (currentAccount) {
+        await sessionService.endSession(currentAccount.id);
+        await cookieManager.removeAccountCookies(currentAccount);
+      }
+      await storage.remove('currentAccount');
+      this.currentAccount = null;
+    } catch (error) {
+      console.error('Error cleaning up session:', error);
+    }
   }
 }
 
