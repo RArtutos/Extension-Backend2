@@ -28,6 +28,7 @@ class AuthService {
       }
 
       await storage.set(STORAGE_KEYS.TOKEN, data.access_token);
+      await storage.set(STORAGE_KEYS.EMAIL, email); // Guardar el email
       return data;
     } catch (error) {
       console.error('Login error:', error);
@@ -36,11 +37,15 @@ class AuthService {
   }
 
   async logout() {
-    await storage.remove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.CURRENT_ACCOUNT]);
+    await storage.remove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.CURRENT_ACCOUNT, STORAGE_KEYS.EMAIL]); // Eliminar el email
   }
 
   async getToken() {
     return await storage.get(STORAGE_KEYS.TOKEN);
+  }
+
+  async getEmail() {
+    return await storage.get(STORAGE_KEYS.EMAIL); // Obtener el email
   }
 
   async isAuthenticated() {
