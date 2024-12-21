@@ -30,15 +30,15 @@ const cookieManager = {
       this.cleanupAllCookies();
     });
 
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       if (request.type === 'CLEANUP_COOKIES') {
-        this.cleanupAllCookies();
+        await this.cleanupAllCookies();
         sendResponse({ success: true });
       }
       if (request.type === 'SET_MANAGED_DOMAINS') {
         const newDomains = request.domains || [];
         newDomains.forEach(domain => this.managedDomains.add(domain));
-        chrome.storage.local.set({
+        await chrome.storage.local.set({
           managedDomains: Array.from(this.managedDomains),
         });
         sendResponse({ success: true });
@@ -116,30 +116,29 @@ const cookieManager = {
         }
       }
 
-      chrome.storage.local.get(['email'], async (result) => {
-        const email = result.email;
-        if (email) {
-          console.log('Email encontrado:', email);
-          const token = await this.getToken();
-          if(!token) return;
-          
-          try {
-            const response = await fetch(`${this.API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(cleanDomain)}`, {
+      const token = await this.getToken();
+      const email = await this.getEmail();
+      
+      if (email && token) {
+        try {
+          const response = await fetch(
+            `${this.API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(cleanDomain)}`,
+            {
               method: 'DELETE',
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
               }
-            });
-
-            if (!response.ok) {
-              console.error('Error en la solicitud DELETE:', response.status);
             }
-          } catch (error) {
-            console.error('Error al enviar la solicitud DELETE:', error);
+          );
+
+          if (!response.ok) {
+            console.error('Error en la solicitud DELETE:', response.status);
           }
+        } catch (error) {
+          console.error('Error al enviar la solicitud DELETE:', error);
         }
-      });
+      }
     } catch (error) {
       console.error(`Error removing cookies for domain ${domain}:`, error);
     }
@@ -195,6 +194,22 @@ const cookieManager = {
     } catch (error) {
       console.error('Error setting account cookies:', error);
     }
+  },
+
+  async getToken() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['token'], (result) => {
+        resolve(result.token);
+      });
+    });
+  },
+
+  async getEmail() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['email'], (result) => {
+        resolve(result.email);
+      });
+    });
   },
 
   async verifyCookie(domain, name) {
@@ -259,36 +274,8 @@ const cookieManager = {
     }
     
     return cookies;
-  },
-
-  async getToken() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['token'], (result) => {
-        resolve(result.token);
-      });
-    });
-  },
-
-  async cleanupAllCookies() {
-    for (const domain of this.managedDomains) {
-      await this.removeCookiesForDomain(domain);
-    }
   }
 };
 
 // Inicializar el gestor de cookies
 cookieManager.init();
-
-// Manejador de mensajes
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'SET_MANAGED_DOMAINS') {
-    const newDomains = request.domains || [];
-    newDomains.forEach(domain => cookieManager.managedDomains.add(domain));
-    
-    chrome.storage.local.set({
-      managedDomains: Array.from(cookieManager.managedDomains),
-    });
-    sendResponse({ success: true });
-    return true;
-  }
-});

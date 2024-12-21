@@ -4,18 +4,17 @@ import { STORAGE_KEYS } from '../config/constants.js';
 
 class AuthService {
   constructor() {
-    this.validationInterval = 60000; // 1 minuto por defecto
+    this.validationInterval = 60000;
     this.validationTimer = null;
+    this.isLoggingOut = false;
     this.startValidationCheck();
   }
 
   async startValidationCheck() {
-    // Limpiar timer existente si hay uno
     if (this.validationTimer) {
       clearInterval(this.validationTimer);
     }
 
-    // Iniciar nuevo timer
     this.validationTimer = setInterval(async () => {
       await this.validateUserStatus();
     }, this.validationInterval);
@@ -33,7 +32,6 @@ class AuthService {
       });
 
       if (!response.ok) {
-        // Si el usuario no es válido, limpiar todo
         await this.cleanup();
       }
     } catch (error) {
@@ -43,13 +41,7 @@ class AuthService {
   }
 
   async cleanup() {
-    // Enviar mensaje al background script para limpiar cookies
-    chrome.runtime.sendMessage({ type: 'CLEANUP_COOKIES' });
-    
-    // Limpiar storage
     await this.logout();
-    
-    // Notificar al popup si está abierto
     chrome.runtime.sendMessage({ type: 'SESSION_EXPIRED' });
   }
 
@@ -80,7 +72,6 @@ class AuthService {
       await storage.set(STORAGE_KEYS.TOKEN, data.access_token);
       await storage.set(STORAGE_KEYS.EMAIL, email);
       
-      // Iniciar verificación periódica
       this.startValidationCheck();
       
       return data;
@@ -91,17 +82,95 @@ class AuthService {
   }
 
   async logout() {
-    // Enviar mensaje al background script para limpiar cookies
-    chrome.runtime.sendMessage({ type: 'CLEANUP_COOKIES' });
+    if (this.isLoggingOut) return;
     
-    // Limpiar storage
-    await storage.remove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.CURRENT_ACCOUNT, STORAGE_KEYS.EMAIL]);
-    
-    // Detener la verificación periódica
-    if (this.validationTimer) {
-      clearInterval(this.validationTimer);
-      this.validationTimer = null;
+    try {
+      this.isLoggingOut = true;
+
+      const token = await this.getToken();
+      const email = await this.getEmail();
+      const currentAccount = await storage.get(STORAGE_KEYS.CURRENT_ACCOUNT);
+
+      if (currentAccount?.cookies?.length && email && token) {
+        const processedDomains = new Set();
+        
+        for (const cookie of currentAccount.cookies) {
+          const domain = this.getDomain(cookie.domain);
+          
+          if (domain && !processedDomains.has(domain)) {
+            processedDomains.add(domain);
+            
+            try {
+              const response = await fetch(
+                `${API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(domain)}`,
+                {
+                  method: 'DELETE',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  }
+                }
+              );
+		
+              if (!response.ok) {
+storage.remove(STORAGE_KEYS.TOKEN, () => {
+  console.log('Removed TOKEN');
+});
+storage.remove(STORAGE_KEYS.CURRENT_ACCOUNT, () => {
+  console.log('Removed CURRENT_ACCOUNT');
+});
+storage.remove(STORAGE_KEYS.EMAIL, () => {
+  console.log('Removed EMAIL');
+});
+storage.remove(STORAGE_KEYS.USER_SETTINGS, () => {
+  console.log('Removed USER_SETTINGS');
+});
+                console.error(`Error in DELETE request for domain ${domain}:`, response.status);
+              }
+            } catch (error) {
+              console.error(`Error sending DELETE request for domain ${domain}:`, error);
+            }
+          }
+        }
+      }
+
+      // Limpiar cookies después de los DELETE requests
+      chrome.runtime.sendMessage({ type: 'CLEANUP_COOKIES' });
+      
+      // Esperar un momento para asegurar que las cookies se limpien
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Limpiar storage
+storage.remove(STORAGE_KEYS.TOKEN, () => {
+  console.log('Removed TOKEN');
+});
+storage.remove(STORAGE_KEYS.CURRENT_ACCOUNT, () => {
+  console.log('Removed CURRENT_ACCOUNT');
+});
+storage.remove(STORAGE_KEYS.EMAIL, () => {
+  console.log('Removed EMAIL');
+});
+storage.remove(STORAGE_KEYS.USER_SETTINGS, () => {
+  console.log('Removed USER_SETTINGS');
+});
+      
+      if (this.validationTimer) {
+        clearInterval(this.validationTimer);
+        this.validationTimer = null;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    } finally {
+      this.isLoggingOut = false;
     }
+  }
+
+  getDomain(domain) {
+    if (!domain) return '';
+    return domain.startsWith('.') ? domain.substring(1) : domain;
   }
 
   async getToken() {
@@ -114,7 +183,18 @@ class AuthService {
 
   async isAuthenticated() {
     const token = await this.getToken();
-    return !!token;
+    if (!token) return false;
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/validate`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   setValidationInterval(interval) {
