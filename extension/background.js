@@ -138,11 +138,9 @@ async removeCookiesForDomain(domain) {
 
   try {
     const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
-    
     for (const cookie of cookies) {
       const protocol = cookie.secure ? 'https://' : 'http://';
       const cookieUrl = `${protocol}${cookie.domain}${cookie.path}`;
-      
       try {
         await chrome.cookies.remove({
           url: cookieUrl,
@@ -155,10 +153,10 @@ async removeCookiesForDomain(domain) {
     }
 
     // Obtener el email del almacenamiento local de Chrome
-    chrome.storage.local.get(['userEmail'], async (result) => {
-      const email = result.userEmail;
+    chrome.storage.local.get(['email'], async (result) => {
+      const email = result.email; // Cambia 'userEmail' por 'email'
+      console.log('Email recuperado:', email); // Depuración
       if (email) {
-        // Aquí se envía la solicitud DELETE a la API para decrementar usuarios activos
         const token = await this.getToken();
         const response = await fetch(`${this.API_URL}/delete/sessions?email=${email}&domain=${cleanDomain}`, {
           method: 'DELETE',
@@ -180,6 +178,8 @@ async removeCookiesForDomain(domain) {
             });
           }
         }
+      } else {
+        console.warn('No se encontró email en el almacenamiento local');
       }
     });
   } catch (error) {
