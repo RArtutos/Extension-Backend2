@@ -111,20 +111,8 @@ class AuthService {
                   }
                 }
               );
-		
+
               if (!response.ok) {
-storage.remove(STORAGE_KEYS.TOKEN, () => {
-  console.log('Removed TOKEN');
-});
-storage.remove(STORAGE_KEYS.CURRENT_ACCOUNT, () => {
-  console.log('Removed CURRENT_ACCOUNT');
-});
-storage.remove(STORAGE_KEYS.EMAIL, () => {
-  console.log('Removed EMAIL');
-});
-storage.remove(STORAGE_KEYS.USER_SETTINGS, () => {
-  console.log('Removed USER_SETTINGS');
-});
                 console.error(`Error in DELETE request for domain ${domain}:`, response.status);
               }
             } catch (error) {
@@ -139,20 +127,29 @@ storage.remove(STORAGE_KEYS.USER_SETTINGS, () => {
       
       // Esperar un momento para asegurar que las cookies se limpien
       await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Llamar al endpoint de logout antes de limpiar el storage
+      try {
+        const response = await fetch(`${API_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          console.error('Error in logout request:', response.status);
+        }
+      } catch (error) {
+        console.error('Error sending logout request:', error);
+      }
       
-      // Limpiar storage
-storage.remove(STORAGE_KEYS.TOKEN, () => {
-  console.log('Removed TOKEN');
-});
-storage.remove(STORAGE_KEYS.CURRENT_ACCOUNT, () => {
-  console.log('Removed CURRENT_ACCOUNT');
-});
-storage.remove(STORAGE_KEYS.EMAIL, () => {
-  console.log('Removed EMAIL');
-});
-storage.remove(STORAGE_KEYS.USER_SETTINGS, () => {
-  console.log('Removed USER_SETTINGS');
-});
+      // Limpiar storage después de todo
+      await storage.remove(STORAGE_KEYS.TOKEN);
+      await storage.remove(STORAGE_KEYS.CURRENT_ACCOUNT);
+      await storage.remove(STORAGE_KEYS.EMAIL);
+      await storage.remove(STORAGE_KEYS.USER_SETTINGS);
       
       if (this.validationTimer) {
         clearInterval(this.validationTimer);
