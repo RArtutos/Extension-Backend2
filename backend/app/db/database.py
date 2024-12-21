@@ -109,6 +109,4 @@ class Database:
         return self.user_accounts.remove_account(user_id, account_id)
         
     def get_sessions_by_domain_and_email(self, domain: str, email: str) -> List[Dict]:
-        # Implementar la lógica para obtener sesiones activas por dominio y user_id
-        query = "SELECT * FROM sessions WHERE domain = ? AND user_id = ? AND active = 1"
-        return self.db.execute(query, (domain, email)).fetchall()
+        return self.sessions.get_sessions_by_domain_and_email(domain, email)
