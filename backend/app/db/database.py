@@ -110,3 +110,6 @@ class Database:
         
     def get_sessions_by_domain_and_email(self, domain: str, email: str) -> List[Dict]:
         return self.sessions.get_sessions_by_domain_and_email(domain, email)
+    
+    def delete_session(self, session_id: str) -> bool:
+        return self.sessions.delete_session(session_id)
