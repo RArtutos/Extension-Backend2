@@ -71,6 +71,41 @@ class SessionRepository(BaseRepository):
             return True
         return False
 
+
+    def get_sessions_by_domain_and_email(self, domain: str, email: str) -> List[Dict]:
+        """Get sessions by domain and email"""
+        data = self._read_data()
+        sessions = data.get("sessions", [])
+        
+        # Filter sessions by domain, email, and active status
+        filtered_sessions = [
+            session for session in sessions
+            if session.get("domain") == domain and
+               session.get("user_id") == email and
+               session.get("active", True)
+        ]
+        
+        return filtered_sessions
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session by ID"""
+        data = self._read_data()
+        sessions = data.get("sessions", [])
+        
+        # Find the session by ID and remove it
+        session_index = next(
+            (index for index, session in enumerate(sessions) if session.get("id") == session_id),
+            None
+        )
+        
+        if session_index is not None:
+            del sessions[session_index]
+            data["sessions"] = sessions
+            self._write_data(data)
+            return True
+        
+        return False
+
     def _is_session_active(self, session: Dict) -> bool:
         """Check if a session is still active based on last activity"""
         if not session.get("last_activity"):
@@ -79,3 +114,4 @@ class SessionRepository(BaseRepository):
         last_activity = datetime.fromisoformat(session["last_activity"])
         timeout = datetime.utcnow() - timedelta(minutes=settings.COOKIE_INACTIVITY_TIMEOUT)
         return last_activity > timeout
+        
