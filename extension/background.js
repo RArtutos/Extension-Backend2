@@ -1,3 +1,64 @@
+// TabTracker implementation
+const tabTracker = {
+  tabAccounts: new Map(),
+  debug: true,
+
+  async trackTab(tabId, account) {
+    if (this.debug) console.log('Tracking tab:', tabId, 'for account:', account.id);
+    this.tabAccounts.set(tabId, account);
+    
+    try {
+      const token = await this.getToken();
+      const response = await fetch(`${cookieManager.API_URL}/api/accounts/${account.id}/active`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) throw new Error('Failed to increment active users');
+      if (this.debug) console.log('Incremented active users for account:', account.id);
+    } catch (error) {
+      console.error('Error incrementing active users:', error);
+    }
+  },
+
+  async untrackTab(tabId) {
+    const account = this.tabAccounts.get(tabId);
+    if (account) {
+      if (this.debug) console.log('Untracking tab:', tabId, 'for account:', account.id);
+      try {
+        const token = await this.getToken();
+        const response = await fetch(`${cookieManager.API_URL}/api/accounts/${account.id}/active`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) throw new Error('Failed to decrement active users');
+        if (this.debug) console.log('Decremented active users for account:', account.id);
+      } catch (error) {
+        console.error('Error decrementing active users:', error);
+      }
+      this.tabAccounts.delete(tabId);
+    }
+  },
+
+  getAccountByTab(tabId) {
+    return this.tabAccounts.get(tabId);
+  },
+
+  async getToken() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['token'], (result) => resolve(result.token));
+    });
+  }
+};
+
+
 const cookieManager = {
   managedDomains: new Set(),
   sessionCheckInterval: null,
@@ -9,23 +70,30 @@ const cookieManager = {
     this.startSessionCheck();
   },
 
-  loadManagedDomains() {
-    chrome.storage.local.get(['managedDomains'], (result) => {
-      if (result.managedDomains) {
-        this.managedDomains = new Set(result.managedDomains);
-      }
-    });
-  },
-
   setupEventListeners() {
     // Escuchar cierre de pestañas
     chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+      console.log('Tab closed:', tabId);
       await this.handleTabClose(tabId);
     });
 
-    // Limpiar al cerrar el navegador
-    chrome.runtime.onSuspend.addListener(() => {
-      this.cleanupAllCookies();
+    // Escuchar cuando el navegador se cierra
+    chrome.runtime.onSuspend.addListener(async () => {
+      console.log('Browser closing, cleaning up...');
+      await this.cleanupAllCookies();
+    });
+
+
+    // Escuchar cuando una pestaña se actualiza
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status === 'complete') {
+        console.log('Tab updated:', tabId, tab.url);
+      }
+    });
+
+    // Escuchar cuando una pestaña cambia de estado
+    chrome.tabs.onActivated.addListener(async (activeInfo) => {
+      console.log('Tab activated:', activeInfo.tabId);
     });
 
     // Escuchar cambios en el almacenamiento
@@ -101,11 +169,26 @@ const cookieManager = {
 
   async handleTabClose(tabId) {
     try {
+      console.log('Handling tab close for tab:', tabId);
+      const account = tabTracker.getAccountByTab(tabId);
+      if (account) {
+        console.log('Found account for tab:', account.id);
+        await tabTracker.untrackTab(tabId);
+        
+        // También eliminar la sesión en el backend
+        const token = await tabTracker.getToken();
+        await fetch(`${this.API_URL}/api/sessions/${account.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+
       const tabs = await chrome.tabs.query({});
-      
       for (const domain of this.managedDomains) {
         const cleanDomain = domain.replace(/^\./, '');
-        
         const hasOpenTabs = tabs.some(tab => {
           try {
             if (!tab.url) return false;
@@ -117,6 +200,7 @@ const cookieManager = {
         });
 
         if (!hasOpenTabs) {
+          console.log('No open tabs for domain:', domain);
           await this.removeCookiesForDomain(domain);
         }
       }
@@ -124,6 +208,7 @@ const cookieManager = {
       console.error('Error handling tab close:', error);
     }
   },
+
 
   async removeCookiesForAccount(account) {
     if (!account?.cookies?.length) return;
@@ -245,14 +330,20 @@ const cookieManager = {
     try {
       const currentAccount = await this.getCurrentAccount();
       if (currentAccount) {
+        // Obtener todas las pestañas que tienen esta cuenta
+        const tabs = Array.from(tabTracker.tabAccounts.entries())
+          .filter(([_, account]) => account.id === currentAccount.id)
+          .map(([tabId]) => tabId);
+
+        // Decrementar para cada pestaña
+        for (const tabId of tabs) {
+          await tabTracker.untrackTab(tabId);
+        }
+
         await this.removeCookiesForAccount(currentAccount);
       }
-      
       await chrome.storage.local.remove(['currentAccount', 'managedDomains']);
       this.managedDomains.clear();
-
-      // Notificar al popup que la sesión ha expirado
-      chrome.runtime.sendMessage({ type: 'SESSION_EXPIRED' });
     } catch (error) {
       console.error('Error during session cleanup:', error);
     }
@@ -273,16 +364,18 @@ const cookieManager = {
 };
 
 // Manejador de mensajes
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'SET_MANAGED_DOMAINS') {
-    cookieManager.managedDomains = new Set(request.domains);
-    chrome.storage.local.set({
-      managedDomains: Array.from(cookieManager.managedDomains),
+    chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+      if (request.type === 'TRACK_TAB') {
+        const { tabId, account } = request;
+        await tabTracker.trackTab(tabId, account);
+        sendResponse({ success: true });
+      }
     });
-    sendResponse({ success: true });
-    return true;
-  }
-});
+  },
 
 // Inicializar el gestor de cookies
 cookieManager.init();
+
+// Exportar para debugging
+window.cookieManager = cookieManager;
+window.tabTracker = tabTracker;
