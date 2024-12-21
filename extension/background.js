@@ -30,13 +30,28 @@ const cookieManager = {
       this.cleanupAllCookies();
     });
 
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.type === 'CLEANUP_COOKIES') {
+        this.cleanupAllCookies();
+        sendResponse({ success: true });
+      }
+      if (request.type === 'SET_MANAGED_DOMAINS') {
+        const newDomains = request.domains || [];
+        newDomains.forEach(domain => this.managedDomains.add(domain));
+        chrome.storage.local.set({
+          managedDomains: Array.from(this.managedDomains),
+        });
+        sendResponse({ success: true });
+      }
+      return true;
+    });
+
     chrome.storage.onChanged.addListener((changes, namespace) => {
       console.log('Storage changed:', changes);
       if (changes.currentAccount) {
         this.handleAccountChange(changes.currentAccount.newValue, changes.currentAccount.oldValue);
       }
       if (changes.managedDomains) {
-        // Mantener los dominios existentes y agregar los nuevos
         const existingDomains = Array.from(this.managedDomains);
         const newDomains = changes.managedDomains.newValue || [];
         this.managedDomains = new Set([...existingDomains, ...newDomains]);
@@ -56,11 +71,9 @@ const cookieManager = {
       const tabs = await chrome.tabs.query({});
       console.log('Pestañas abiertas:', tabs, 'Dominios gestionados:', this.managedDomains);
       
-      // Para cada dominio gestionado
       for (const domain of this.managedDomains) {
         const cleanDomain = domain.replace(/^\./, '');
         
-        // Verificar si hay otras pestañas abiertas para este dominio específico
         const hasOpenTabsForDomain = tabs.some(tab => {
           try {
             if (!tab.url) return false;
@@ -71,11 +84,9 @@ const cookieManager = {
           }
         });
 
-        // Si no hay pestañas abiertas para este dominio específico, eliminar sus cookies
         if (!hasOpenTabsForDomain) {
           console.log('No hay pestañas abiertas para el dominio:', domain);
           await this.removeCookiesForDomain(domain);
-          // No eliminar el dominio del Set para mantener el tracking de todos los dominios activos
         }
       }
     } catch (error) {
@@ -105,7 +116,6 @@ const cookieManager = {
         }
       }
 
-      // Obtener el email del almacenamiento local de Chrome
       chrome.storage.local.get(['email'], async (result) => {
         const email = result.email;
         if (email) {
@@ -133,6 +143,14 @@ const cookieManager = {
     } catch (error) {
       console.error(`Error removing cookies for domain ${domain}:`, error);
     }
+  },
+
+  async cleanupAllCookies() {
+    console.log('Limpiando todas las cookies...');
+    for (const domain of this.managedDomains) {
+      await this.removeCookiesForDomain(domain);
+    }
+    console.log('Limpieza de cookies completada');
   },
 
   async setAccountCookies(account) {
@@ -167,10 +185,7 @@ const cookieManager = {
         }
       }
 
-      // Agregar nuevos dominios al Set existente
       domains.forEach(domain => this.managedDomains.add(domain));
-      
-      // Actualizar storage con todos los dominios
       await chrome.storage.local.set({ 
         managedDomains: Array.from(this.managedDomains) 
       });
@@ -267,7 +282,6 @@ cookieManager.init();
 // Manejador de mensajes
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'SET_MANAGED_DOMAINS') {
-    // Mantener dominios existentes y agregar nuevos
     const newDomains = request.domains || [];
     newDomains.forEach(domain => cookieManager.managedDomains.add(domain));
     
