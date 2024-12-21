@@ -11,19 +11,33 @@ class HttpClient {
     };
   }
 
+  async handleResponse(response) {
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Request failed');
+      }
+      return data;
+    } else {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(text || 'Request failed');
+      }
+      return text;
+    }
+  }
+
   async get(endpoint) {
     try {
       const headers = await this.getHeaders();
       const response = await fetch(`${API_URL}${endpoint}`, { headers });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Request failed');
-      }
-
-      return await response.json();
+      return await this.handleResponse(response);
     } catch (error) {
       console.error('GET request failed:', error);
+      if (error.message.includes('401') || error.message.includes('403')) {
+        await storage.remove(STORAGE_KEYS.TOKEN);
+      }
       throw error;
     }
   }
@@ -36,15 +50,12 @@ class HttpClient {
         headers,
         body: JSON.stringify(data)
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Request failed');
-      }
-
-      return await response.json();
+      return await this.handleResponse(response);
     } catch (error) {
       console.error('POST request failed:', error);
+      if (error.message.includes('401') || error.message.includes('403')) {
+        await storage.remove(STORAGE_KEYS.TOKEN);
+      }
       throw error;
     }
   }
@@ -56,15 +67,12 @@ class HttpClient {
         method: 'DELETE',
         headers
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Request failed');
-      }
-
-      return await response.json();
+      return await this.handleResponse(response);
     } catch (error) {
       console.error('DELETE request failed:', error);
+      if (error.message.includes('401') || error.message.includes('403')) {
+        await storage.remove(STORAGE_KEYS.TOKEN);
+      }
       throw error;
     }
   }

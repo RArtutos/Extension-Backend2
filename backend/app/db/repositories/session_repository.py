@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from ..base import BaseRepository
 from ...core.config import settings
@@ -77,5 +77,5 @@ class SessionRepository(BaseRepository):
             return False
             
         last_activity = datetime.fromisoformat(session["last_activity"])
-        timeout = datetime.utcnow() - settings.COOKIE_INACTIVITY_TIMEOUT
+        timeout = datetime.utcnow() - timedelta(minutes=settings.COOKIE_INACTIVITY_TIMEOUT)
         return last_activity > timeout
