@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import auth, accounts, proxies, analytics, sessions
+from .routers import auth, accounts, proxies, analytics, sessions, delete
 from .routers.admin import users, analytics as admin_analytics, presets, accounts as admin_accounts
 from .core.config import settings
 
@@ -26,6 +26,8 @@ app.include_router(users.router, prefix="/api/admin/users", tags=["admin-users"]
 app.include_router(admin_analytics.router, prefix="/api/admin/analytics", tags=["admin-analytics"])
 app.include_router(presets.router, prefix="/api/admin/presets", tags=["admin-presets"])
 app.include_router(admin_accounts.router, prefix="/api/admin/accounts", tags=["admin-accounts"])
+app.include_router(delete.router, prefix="/delete", tags=["delete"])
+
 
 @app.on_event("startup")
 async def startup_event():
