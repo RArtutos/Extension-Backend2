@@ -25,18 +25,13 @@ async def remove_sessions(
     if not sessions:
         raise HTTPException(status_code=404, detail="No sessions found for the given domain and email")
 
-    account_ids = set()
     for session in sessions:
         account_id = session["account_id"]
-        account_ids.add(account_id)
         # Eliminar la sesión
         if not db.delete_session(session["id"]):
             raise HTTPException(status_code=400, detail=f"Failed to remove session {session['id']}")
-
-    # Decrementar usuarios activos de cada cuenta
-    for account_id in account_ids:
+        # Decrementar usuarios activos de cada cuenta
         if not db.accounts.decrement_active_users(account_id):
             raise HTTPException(status_code=400, detail=f"Failed to decrement active users for account {account_id}")
 
     return {"success": True, "message": "Sessions removed and active users decremented"}
-
