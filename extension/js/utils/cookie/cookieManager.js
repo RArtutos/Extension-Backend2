@@ -5,6 +5,8 @@ import { httpClient } from '../httpClient.js';
 class CookieManager {
   constructor() {
     this.managedDomains = new Set();
+    this.maxRetries = 3;
+    this.retryDelay = 50; // 500ms entre reintentos
   }
 
   async setAccountCookies(account) {
@@ -20,12 +22,10 @@ class CookieManager {
         const domain = cookie.domain;
         domains.push(domain);
         
-        // Ya no borramos las cookies existentes
-        
         if (cookie.name === 'header_cookies') {
-          await this.setHeaderCookies(domain, cookie.value);
+          await this.setHeaderCookiesWithVerification(domain, cookie.value);
         } else {
-          await this.setCookie(domain, cookie.name, cookie.value);
+          await this.setCookieWithVerification(domain, cookie.name, cookie.value);
         }
       }
 
@@ -35,25 +35,67 @@ class CookieManager {
         domains: Array.from(this.managedDomains)
       });
 
+      // Verificación final de todas las cookies
+      const allCookiesSet = await this.verifyAllCookies(account);
+      if (!allCookiesSet) {
+        console.warn('Some cookies failed to set after all retries');
+      }
+
+      return allCookiesSet;
+
     } catch (error) {
       console.error('Error setting account cookies:', error);
       throw new Error('Failed to set account cookies');
     }
   }
 
-  async removeAccountCookies(account) {
-    if (!account?.cookies?.length) return;
-    
-    try {
-      // Ya no decrementamos el contador
+  async verifyAllCookies(account) {
+    for (const cookie of account.cookies) {
+      const domain = cookie.domain;
+      const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
       
-      // Ya no eliminamos las cookies
-      
-      // Finalmente limpiar la sesión
-      await sessionService.endSession(account.id, this.getDomain(account));
-    } catch (error) {
-      console.error('Error removing account cookies:', error);
+      if (cookie.name === 'header_cookies') {
+        const headerCookies = this.parseHeaderString(cookie.value);
+        for (const headerCookie of headerCookies) {
+          const isSet = await this.verifyCookie(cleanDomain, headerCookie.name);
+          if (!isSet) return false;
+        }
+      } else {
+        const isSet = await this.verifyCookie(cleanDomain, cookie.name);
+        if (!isSet) return false;
+      }
     }
+    return true;
+  }
+
+  async verifyCookie(domain, name) {
+    const cookies = await chrome.cookies.getAll({ domain, name });
+    return cookies.length > 0;
+  }
+
+  async setCookieWithVerification(domain, name, value) {
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      await this.setCookie(domain, name, value);
+      
+      // Verificar si la cookie se estableció correctamente
+      const isSet = await this.verifyCookie(domain.startsWith('.') ? domain.substring(1) : domain, name);
+      if (isSet) return true;
+      
+      // Esperar antes de reintentar
+      await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+    }
+    return false;
+  }
+
+  async setHeaderCookiesWithVerification(domain, cookieString) {
+    if (!cookieString) return true;
+    
+    const cookies = this.parseHeaderString(cookieString);
+    for (const cookie of cookies) {
+      const success = await this.setCookieWithVerification(domain, cookie.name, cookie.value);
+      if (!success) return false;
+    }
+    return true;
   }
 
   async setCookie(domain, name, value) {
@@ -84,17 +126,17 @@ class CookieManager {
         });
       } catch (retryError) {
         console.error(`Failed to set cookie ${name} after retry:`, retryError);
-        throw retryError;
       }
     }
   }
 
-  async setHeaderCookies(domain, cookieString) {
-    if (!cookieString) return;
+  async removeAccountCookies(account) {
+    if (!account?.cookies?.length) return;
     
-    const cookies = this.parseHeaderString(cookieString);
-    for (const cookie of cookies) {
-      await this.setCookie(domain, cookie.name, cookie.value);
+    try {
+      await sessionService.endSession(account.id, this.getDomain(account));
+    } catch (error) {
+      console.error('Error removing account cookies:', error);
     }
   }
 

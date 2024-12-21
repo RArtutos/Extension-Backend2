@@ -22,8 +22,17 @@ class AccountManager {
       // Iniciar nueva sesión
       await sessionService.startSession(account.id, this.getDomain(account));
 
-      // Establecer cookies
-      await cookieManager.setAccountCookies(account);
+      // Establecer cookies con verificación
+      const cookiesSet = await cookieManager.setAccountCookies(account);
+      
+      if (!cookiesSet) {
+        // Reintentar una vez más si falló
+        console.log('Retrying cookie setup...');
+        const retrySuccess = await cookieManager.setAccountCookies(account);
+        if (!retrySuccess) {
+          throw new Error('Failed to set cookies after retry');
+        }
+      }
 
       // Actualizar storage
       await storage.set('currentAccount', account);

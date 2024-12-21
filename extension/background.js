@@ -31,9 +31,12 @@ const cookieManager = {
     });
 
     chrome.storage.onChanged.addListener((changes, namespace) => {
-      console.log('Cambios en el almacenamiento:', changes);
+      console.log('Storage changed:', changes);
       if (changes.currentAccount) {
         this.handleAccountChange(changes.currentAccount.newValue, changes.currentAccount.oldValue);
+      }
+      if (changes.managedDomains) {
+        this.managedDomains = new Set(changes.managedDomains.newValue || []);
       }
     });
   },
@@ -50,10 +53,12 @@ const cookieManager = {
       const tabs = await chrome.tabs.query({});
       console.log('Pestañas abiertas:', tabs);
       
+      // Para cada dominio gestionado
       for (const domain of this.managedDomains) {
         const cleanDomain = domain.replace(/^\./, '');
         
-        const hasOpenTabs = tabs.some(tab => {
+        // Verificar si hay otras pestañas abiertas para este dominio específico
+        const hasOpenTabsForDomain = tabs.some(tab => {
           try {
             if (!tab.url) return false;
             const tabDomain = new URL(tab.url).hostname;
@@ -63,7 +68,8 @@ const cookieManager = {
           }
         });
 
-        if (!hasOpenTabs) {
+        // Si no hay pestañas abiertas para este dominio específico, eliminar sus cookies
+        if (!hasOpenTabsForDomain) {
           console.log('No hay pestañas abiertas para el dominio:', domain);
           await this.removeCookiesForDomain(domain);
         }
@@ -104,7 +110,7 @@ const cookieManager = {
           if(!token) return;
           
           try {
-            const response = await fetch(`${this.API_URL}/delete/sessions?email=${email}&domain=${cleanDomain}`, {
+            const response = await fetch(`${this.API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(cleanDomain)}`, {
               method: 'DELETE',
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -130,15 +136,30 @@ const cookieManager = {
 
     try {
       const domains = [];
+      let retryCount = 0;
+      const maxRetries = 3;
       
       for (const cookie of account.cookies) {
         const domain = cookie.domain;
         domains.push(domain);
 
-        if (cookie.name === 'header_cookies') {
-          await this.setHeaderCookies(domain, cookie.value);
-        } else {
-          await this.setCookie(domain, cookie.name, cookie.value);
+        let cookiesSet = false;
+        while (!cookiesSet && retryCount < maxRetries) {
+          try {
+            if (cookie.name === 'header_cookies') {
+              await this.setHeaderCookies(domain, cookie.value);
+            } else {
+              await this.setCookie(domain, cookie.name, cookie.value);
+            }
+            cookiesSet = await this.verifyCookie(domain, cookie.name);
+          } catch (error) {
+            console.error(`Error setting cookie, attempt ${retryCount + 1}:`, error);
+          }
+          
+          if (!cookiesSet) {
+            retryCount++;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
       }
 
@@ -148,6 +169,12 @@ const cookieManager = {
     } catch (error) {
       console.error('Error setting account cookies:', error);
     }
+  },
+
+  async verifyCookie(domain, name) {
+    const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
+    const cookies = await chrome.cookies.getAll({ domain: cleanDomain, name });
+    return cookies.length > 0;
   },
 
   async setCookie(domain, name, value) {
@@ -164,7 +191,6 @@ const cookieManager = {
         secure: true,
         sameSite: 'lax'
       });
-      console.log(`Cookie establecida: ${name} en ${domain}`);
     } catch (error) {
       console.warn(`Error setting cookie ${name}, retrying with alternative settings:`, error);
       try {
@@ -177,9 +203,9 @@ const cookieManager = {
           secure: false,
           sameSite: 'no_restriction'
         });
-        console.log(`Cookie establecida con configuración alternativa: ${name} en ${domain}`);
       } catch (retryError) {
         console.error(`Failed to set cookie ${name} after retry:`, retryError);
+        throw retryError;
       }
     }
   },
@@ -215,8 +241,17 @@ const cookieManager = {
         resolve(result.token);
       });
     });
+  },
+
+  async cleanupAllCookies() {
+    for (const domain of this.managedDomains) {
+      await this.removeCookiesForDomain(domain);
+    }
   }
 };
+
+// Inicializar el gestor de cookies
+cookieManager.init();
 
 // Manejador de mensajes
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -226,10 +261,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       managedDomains: Array.from(cookieManager.managedDomains),
     });
     sendResponse({ success: true });
-    console.log('Dominios gestionados establecidos:', request.domains);
     return true;
   }
 });
-
-// Inicializar el gestor de cookies
-cookieManager.init();
