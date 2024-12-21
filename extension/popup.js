@@ -41,7 +41,7 @@ class PopupManager {
     }
   }
 
-  async handleLogin() {
+async handleLogin() {
     const email = document.getElementById('email')?.value;
     const password = document.getElementById('password')?.value;
 
@@ -69,13 +69,14 @@ class PopupManager {
       }
 
       await storage.set(STORAGE_KEYS.TOKEN, data.access_token);
+      await storage.set('userEmail', email); // Almacenar el correo electrónico en el almacenamiento local
       await this.showAccountManager();
       ui.showSuccess('Login successful');
     } catch (error) {
       console.error('Login failed:', error);
       ui.showError('Login failed. Please check your credentials and try again.');
     }
-  }
+}
 
   async handleLogout() {
     try {
