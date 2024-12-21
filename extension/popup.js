@@ -1,4 +1,4 @@
-import { API_URL, STORAGE_KEYS, UI_CONFIG } from './js/config.js';
+import { API_URL, STORAGE_KEYS, UI_CONFIG, USER_EMAIL} from './js/config.js';
 import { storage } from './js/utils/storage.js';
 import { ui } from './js/utils/ui.js';
 import { accountManager } from './js/accountManager.js';
@@ -69,7 +69,8 @@ async handleLogin() {
       }
 
       await storage.set(STORAGE_KEYS.TOKEN, data.access_token);
-      await storage.set('userEmail', email); // Almacenar el correo electrónico en el almacenamiento local
+      await storage.set(STORAGE_KEYS.TOKEN, email);
+
       await this.showAccountManager();
       ui.showSuccess('Login successful');
     } catch (error) {
