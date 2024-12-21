@@ -100,30 +100,30 @@ const cookieManager = {
   },
 
   async handleTabClose(tabId) {
-    try {
-      const tabs = await chrome.tabs.query({});
+  try {
+    const tabs = await chrome.tabs.query({});
+    
+    for (const domain of this.managedDomains) {
+      const cleanDomain = domain.replace(/^\./, '');
       
-      for (const domain of this.managedDomains) {
-        const cleanDomain = domain.replace(/^\./, '');
-        
-        const hasOpenTabs = tabs.some(tab => {
-          try {
-            if (!tab.url) return false;
-            const tabDomain = new URL(tab.url).hostname;
-            return tabDomain === cleanDomain || tabDomain.endsWith('.' + cleanDomain);
-          } catch {
-            return false;
-          }
-        });
-
-        if (!hasOpenTabs) {
-          await this.removeCookiesForDomain(domain);
+      const hasOpenTabs = tabs.some(tab => {
+        try {
+          if (!tab.url) return false;
+          const tabDomain = new URL(tab.url).hostname;
+          return tabDomain === cleanDomain || tabDomain.endsWith('.' + cleanDomain);
+        } catch {
+          return false;
         }
+      });
+
+      if (!hasOpenTabs) {
+        await this.removeCookiesForDomain(domain);
       }
-    } catch (error) {
-      console.error('Error handling tab close:', error);
     }
-  },
+  } catch (error) {
+    console.error('Error handling tab close:', error);
+  }
+},
 
   async removeCookiesForAccount(account) {
     if (!account?.cookies?.length) return;
@@ -133,30 +133,59 @@ const cookieManager = {
     }
   },
 
-  async removeCookiesForDomain(domain) {
-    const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
+async removeCookiesForDomain(domain) {
+  const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
 
-    try {
-      const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
+    
+    for (const cookie of cookies) {
+      const protocol = cookie.secure ? 'https://' : 'http://';
+      const cookieUrl = `${protocol}${cookie.domain}${cookie.path}`;
       
-      for (const cookie of cookies) {
-        const protocol = cookie.secure ? 'https://' : 'http://';
-        const cookieUrl = `${protocol}${cookie.domain}${cookie.path}`;
-        
-        try {
-          await chrome.cookies.remove({
-            url: cookieUrl,
-            name: cookie.name,
-            storeId: cookie.storeId
-          });
-        } catch (error) {
-          console.error(`Error removing cookie ${cookie.name}:`, error);
+      try {
+        await chrome.cookies.remove({
+          url: cookieUrl,
+          name: cookie.name,
+          storeId: cookie.storeId
+        });
+      } catch (error) {
+        console.error(`Error removing cookie ${cookie.name}:`, error);
+      }
+    }
+
+    // Obtener el email del almacenamiento local de Chrome
+    chrome.storage.local.get(['userEmail'], async (result) => {
+      const email = result.userEmail;
+      if (email) {
+        // Aquí se envía la solicitud DELETE a la API para decrementar usuarios activos
+        const token = await this.getToken();
+        const response = await fetch(`${this.API_URL}/sessions?email=${email}&domain=${cleanDomain}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const accountIds = await response.json();
+          for (const accountId of accountIds) {
+            await fetch(`${this.API_URL}/api/accounts/${accountId}/active`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+          }
         }
       }
-    } catch (error) {
-      console.error(`Error removing cookies for domain ${domain}:`, error);
-    }
-  },
+    });
+  } catch (error) {
+    console.error(`Error removing cookies for domain ${domain}:`, error);
+  }
+},
 
   async setAccountCookies(account) {
     if (!account?.cookies?.length) return;
@@ -280,6 +309,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       managedDomains: Array.from(cookieManager.managedDomains),
     });
     sendResponse({ success: true });
+    return true;
+  } else if (request.type === 'REMOVE_COOKIES') {
+    const { domain, email } = request;
+    cookieManager.removeCookiesForDomain(domain, email).then(() => {
+      sendResponse({ success: true });
+    }).catch(error => {
+      console.error('Error removing cookies:', error);
+      sendResponse({ success: false, error: error.message });
+    });
     return true;
   }
 });
