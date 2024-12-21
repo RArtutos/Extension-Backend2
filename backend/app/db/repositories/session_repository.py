@@ -2,25 +2,11 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from ..base import BaseRepository
 from ...core.config import settings
+import random
 
 class SessionRepository(BaseRepository):
     def __init__(self):
         super().__init__(settings.DATA_FILE)
-
-    def get_active_sessions(self, account_id: int) -> List[Dict]:
-        """Get all active sessions for an account"""
-        data = self._read_data()
-        sessions = data.get("sessions", [])
-        
-        # Filter active sessions for the account
-        active_sessions = [
-            session for session in sessions
-            if session.get("account_id") == account_id and
-            session.get("active", True) and
-            self._is_session_active(session)
-        ]
-        
-        return active_sessions
 
     def create_session(self, session_data: Dict) -> bool:
         """Create a new session"""
@@ -28,6 +14,14 @@ class SessionRepository(BaseRepository):
         if "sessions" not in data:
             data["sessions"] = []
             
+        # Generate a random numeric ID between 100000 and 999999
+        while True:
+            session_id = str(random.randint(100000, 999999))
+            # Check if ID already exists
+            if not any(s.get("id") == session_id for s in data["sessions"]):
+                break
+        
+        session_data["id"] = session_id
         session_data["created_at"] = datetime.utcnow().isoformat()
         session_data["last_activity"] = datetime.utcnow().isoformat()
         session_data["active"] = True
@@ -71,6 +65,20 @@ class SessionRepository(BaseRepository):
             return True
         return False
 
+    def get_active_sessions(self, account_id: int) -> List[Dict]:
+        """Get all active sessions for an account"""
+        data = self._read_data()
+        sessions = data.get("sessions", [])
+        
+        # Filter active sessions for the account
+        active_sessions = [
+            session for session in sessions
+            if session.get("account_id") == account_id and
+            session.get("active", True) and
+            self._is_session_active(session)
+        ]
+        
+        return active_sessions
 
     def get_sessions_by_domain_and_email(self, domain: str, email: str) -> List[Dict]:
         """Get sessions by domain and email"""
@@ -114,4 +122,3 @@ class SessionRepository(BaseRepository):
         last_activity = datetime.fromisoformat(session["last_activity"])
         timeout = datetime.utcnow() - timedelta(minutes=settings.COOKIE_INACTIVITY_TIMEOUT)
         return last_activity > timeout
-        
