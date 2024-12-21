@@ -14,7 +14,8 @@ export const ANALYTICS_CONFIG = {
 export const STORAGE_KEYS = {
   TOKEN: 'token',
   CURRENT_ACCOUNT: 'currentAccount',
-  USER_DATA: 'userData'
+  USER_DATA: 'userData',
+  EMAIL: 'email' // Definir el email
 };
 
 export const UI_CONFIG = {
