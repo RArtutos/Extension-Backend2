@@ -29,15 +29,9 @@ class AccountManager {
       await storage.set('currentAccount', account);
       this.currentAccount = account;
 
-      // Abrir dominio en nueva pestaña y rastrearla
-      chrome.tabs.create({ url: `https://${this.getDomain(account)}` }, async (tab) => {
-        // Notificar al background script para trackear la pestaña
-        chrome.runtime.sendMessage({
-          type: 'TRACK_TAB',
-          tabId: tab.id,
-          account: account
-        });
-      });
+      // Abrir dominio en nueva pestaña
+      const domain = this.getDomain(account);
+      chrome.tabs.create({ url: `https://${domain}` });
 
       ui.showSuccess('Account switched successfully');
 
@@ -52,7 +46,25 @@ class AccountManager {
     }
   }
 
-  // ... resto del código ...
+  getDomain(account) {
+    if (!account?.cookies?.length) return '';
+    const domain = account.cookies[0].domain;
+    return domain.startsWith('.') ? domain.substring(1) : domain;
+  }
+
+  async cleanupCurrentSession() {
+    try {
+      const currentAccount = await storage.get('currentAccount');
+      if (currentAccount) {
+        await sessionService.endSession(currentAccount.id, this.getDomain(currentAccount));
+        await cookieManager.removeAccountCookies(currentAccount);
+      }
+      await storage.remove('currentAccount');
+      this.currentAccount = null;
+    } catch (error) {
+      console.error('Error cleaning up session:', error);
+    }
+  }
 }
 
 export const accountManager = new AccountManager();
