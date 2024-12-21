@@ -160,7 +160,7 @@ async removeCookiesForDomain(domain) {
       if (email) {
         // Aquí se envía la solicitud DELETE a la API para decrementar usuarios activos
         const token = await this.getToken();
-        const response = await fetch(`${this.API_URL}/sessions?email=${email}&domain=${cleanDomain}`, {
+        const response = await fetch(`${this.API_URL}/api/sessions?email=${email}&domain=${cleanDomain}`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`,
