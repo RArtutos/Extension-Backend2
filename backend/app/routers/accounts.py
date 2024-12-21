@@ -178,8 +178,12 @@ async def remove_sessions(
     current_user: dict = Depends(get_current_user)
 ):
     """Remove sessions and decrement active users count"""
-    # Obtener las sesiones activas para el dominio y email
-    sessions = db.get_sessions_by_domain_and_email(domain, email)
+    # Decodificar los parámetros de la URL
+    decoded_domain = unquote(domain)
+    decoded_email = unquote(email)
+
+    # Obtener las sesiones activas para el dominio y email decodificados
+    sessions = db.get_sessions_by_domain_and_email(decoded_domain, decoded_email)
     if not sessions:
         raise HTTPException(status_code=404, detail="No sessions found for the given domain and email")
 
