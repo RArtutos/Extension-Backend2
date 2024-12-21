@@ -20,8 +20,8 @@ class CookieManager {
         const domain = cookie.domain;
         domains.push(domain);
         
-        await this.removeAllCookiesForDomain(domain);
-
+        // Ya no borramos las cookies existentes
+        
         if (cookie.name === 'header_cookies') {
           await this.setHeaderCookies(domain, cookie.value);
         } else {
@@ -45,39 +45,14 @@ class CookieManager {
     if (!account?.cookies?.length) return;
     
     try {
-      // Primero decrementar el contador
-      await httpClient.delete(`/api/accounts/${account.id}/active`);
+      // Ya no decrementamos el contador
       
-      // Luego eliminar las cookies
-      for (const cookie of account.cookies) {
-        await this.removeAllCookiesForDomain(cookie.domain);
-      }
-
+      // Ya no eliminamos las cookies
+      
       // Finalmente limpiar la sesión
       await sessionService.endSession(account.id, this.getDomain(account));
     } catch (error) {
       console.error('Error removing account cookies:', error);
-    }
-  }
-
-  async removeAllCookiesForDomain(domain) {
-    const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
-    try {
-      const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
-      
-      for (const cookie of cookies) {
-        try {
-          await chrome.cookies.remove({
-            url: `https://${cleanDomain}${cookie.path}`,
-            name: cookie.name,
-            storeId: cookie.storeId
-          });
-        } catch (error) {
-          console.warn(`Error removing cookie ${cookie.name}:`, error);
-        }
-      }
-    } catch (error) {
-      console.error(`Error removing cookies for domain ${domain}:`, error);
     }
   }
 

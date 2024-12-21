@@ -20,19 +20,16 @@ const cookieManager = {
 
   setupEventListeners() {
     console.log('Configurando eventListeners');
-    // Escuchar cierre de pestañas
     chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
       console.log('Pestaña cerrada:', tabId);
       await this.handleTabClose(tabId);
     });
 
-    // Limpiar al cerrar el navegador
     chrome.runtime.onSuspend.addListener(() => {
       console.log('Navegador cerrado');
       this.cleanupAllCookies();
     });
 
-    // Escuchar cambios en el almacenamiento
     chrome.storage.onChanged.addListener((changes, namespace) => {
       console.log('Cambios en el almacenamiento:', changes);
       if (changes.currentAccount) {
@@ -43,9 +40,6 @@ const cookieManager = {
 
   async handleAccountChange(newAccount, oldAccount) {
     console.log('Cambio de cuenta:', { newAccount, oldAccount });
-    if (oldAccount) {
-      await this.removeCookiesForAccount(oldAccount);
-    }
     if (newAccount) {
       await this.setAccountCookies(newAccount);
     }
@@ -76,14 +70,6 @@ const cookieManager = {
       }
     } catch (error) {
       console.error('Error handling tab close:', error);
-    }
-  },
-
-  async removeCookiesForAccount(account) {
-    if (!account?.cookies?.length) return;
-    
-    for (const cookie of account.cookies) {
-      await this.removeCookiesForDomain(cookie.domain);
     }
   },
 
@@ -148,8 +134,6 @@ const cookieManager = {
       for (const cookie of account.cookies) {
         const domain = cookie.domain;
         domains.push(domain);
-        
-        await this.removeCookiesForDomain(domain);
 
         if (cookie.name === 'header_cookies') {
           await this.setHeaderCookies(domain, cookie.value);
@@ -243,16 +227,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     sendResponse({ success: true });
     console.log('Dominios gestionados establecidos:', request.domains);
-    return true;
-  } else if (request.type === 'REMOVE_COOKIES') {
-    const { domain, email } = request;
-    cookieManager.removeCookiesForDomain(domain, email).then(() => {
-      sendResponse({ success: true });
-      console.log('Cookies eliminadas para el dominio:', domain);
-    }).catch(error => {
-      console.error('Error removing cookies:', error);
-      sendResponse({ success: false, error: error.message });
-    });
     return true;
   }
 });
