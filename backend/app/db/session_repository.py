@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Optional, List, Dict
-from .base import Database
+from .base import BaseRepository
 from ..core.config import settings
 
-class SessionRepository(Database):
+class SessionRepository(BaseRepository):
     def __init__(self):
         super().__init__(settings.DATA_FILE)
 
