@@ -1,32 +1,60 @@
+import { API_URL } from './js/config.js';
+
 const cookieManager = {
   managedDomains: new Set(),
-  API_URL: 'https://api.artutos.us.kg',
 
   init() {
-    console.log('Inicializando cookieManager');
+    console.log('Initializing cookieManager');
     this.loadManagedDomains();
     this.setupEventListeners();
+    this.startTokenValidation();
   },
 
-  loadManagedDomains() {
-    console.log('Cargando dominios gestionados');
-    chrome.storage.local.get(['managedDomains'], (result) => {
-      if (result.managedDomains) {
-        this.managedDomains = new Set(result.managedDomains);
+  async startTokenValidation() {
+    // Validar token cada minuto
+    setInterval(async () => {
+      try {
+        const token = await this.getToken();
+        if (!token) return;
+
+        const response = await fetch(`${API_URL}/api/auth/validate`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          console.log('Token validation failed, cleaning up...');
+          await this.cleanupAllCookies();
+          await this.clearStorage();
+        }
+      } catch (error) {
+        console.error('Error validating token:', error);
+        await this.cleanupAllCookies();
+        await this.clearStorage();
       }
-      console.log('Dominios gestionados cargados:', this.managedDomains);
-    });
+    }, 60000); // Cada minuto
+  },
+
+  async loadManagedDomains() {
+    console.log('Loading managed domains');
+    const result = await chrome.storage.local.get(['managedDomains']);
+    if (result.managedDomains) {
+      this.managedDomains = new Set(result.managedDomains);
+    }
+    console.log('Managed domains loaded:', this.managedDomains);
   },
 
   setupEventListeners() {
-    console.log('Configurando eventListeners');
+    console.log('Setting up event listeners');
+    
     chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-      console.log('Pestaña cerrada:', tabId);
+      console.log('Tab closed:', tabId);
       await this.handleTabClose(tabId);
     });
 
     chrome.runtime.onSuspend.addListener(() => {
-      console.log('Navegador cerrado');
+      console.log('Browser closing');
       this.cleanupAllCookies();
     });
 
@@ -60,7 +88,7 @@ const cookieManager = {
   },
 
   async handleAccountChange(newAccount, oldAccount) {
-    console.log('Cambio de cuenta:', { newAccount, oldAccount });
+    console.log('Account change:', { newAccount, oldAccount });
     if (newAccount) {
       await this.setAccountCookies(newAccount);
     }
@@ -69,7 +97,7 @@ const cookieManager = {
   async handleTabClose(tabId) {
     try {
       const tabs = await chrome.tabs.query({});
-      console.log('Pestañas abiertas:', tabs, 'Dominios gestionados:', this.managedDomains);
+      console.log('Open tabs:', tabs, 'Managed domains:', this.managedDomains);
       
       for (const domain of this.managedDomains) {
         const cleanDomain = domain.replace(/^\./, '');
@@ -85,7 +113,7 @@ const cookieManager = {
         });
 
         if (!hasOpenTabsForDomain) {
-          console.log('No hay pestañas abiertas para el dominio:', domain);
+          console.log('No open tabs for domain:', domain);
           await this.removeCookiesForDomain(domain);
         }
       }
@@ -99,7 +127,7 @@ const cookieManager = {
 
     try {
       const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
-      console.log('Eliminando cookies para el dominio:', domain, cookies);
+      console.log('Removing cookies for domain:', domain, cookies);
       
       for (const cookie of cookies) {
         const protocol = cookie.secure ? 'https://' : 'http://';
@@ -122,7 +150,7 @@ const cookieManager = {
       if (email && token) {
         try {
           const response = await fetch(
-            `${this.API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(cleanDomain)}`,
+            `${API_URL}/delete/sessions?email=${encodeURIComponent(email)}&domain=${encodeURIComponent(cleanDomain)}`,
             {
               method: 'DELETE',
               headers: {
@@ -133,10 +161,10 @@ const cookieManager = {
           );
 
           if (!response.ok) {
-            console.error('Error en la solicitud DELETE:', response.status);
+            console.error('Error in DELETE request:', response.status);
           }
         } catch (error) {
-          console.error('Error al enviar la solicitud DELETE:', error);
+          console.error('Error sending DELETE request:', error);
         }
       }
     } catch (error) {
@@ -145,11 +173,25 @@ const cookieManager = {
   },
 
   async cleanupAllCookies() {
-    console.log('Limpiando todas las cookies...');
+    console.log('Cleaning up all cookies...');
     for (const domain of this.managedDomains) {
       await this.removeCookiesForDomain(domain);
     }
-    console.log('Limpieza de cookies completada');
+    console.log('Cookie cleanup completed');
+  },
+
+  async clearStorage() {
+    await chrome.storage.local.remove(['token', 'currentAccount', 'email']);
+  },
+
+  async getToken() {
+    const result = await chrome.storage.local.get(['token']);
+    return result.token;
+  },
+
+  async getEmail() {
+    const result = await chrome.storage.local.get(['email']);
+    return result.email;
   },
 
   async setAccountCookies(account) {
@@ -189,27 +231,11 @@ const cookieManager = {
         managedDomains: Array.from(this.managedDomains) 
       });
       
-      console.log('Cookies de cuenta establecidas:', account);
-      console.log('Dominios gestionados actualizados:', this.managedDomains);
+      console.log('Account cookies set:', account);
+      console.log('Managed domains updated:', this.managedDomains);
     } catch (error) {
       console.error('Error setting account cookies:', error);
     }
-  },
-
-  async getToken() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['token'], (result) => {
-        resolve(result.token);
-      });
-    });
-  },
-
-  async getEmail() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['email'], (result) => {
-        resolve(result.email);
-      });
-    });
   },
 
   async verifyCookie(domain, name) {
@@ -277,5 +303,5 @@ const cookieManager = {
   }
 };
 
-// Inicializar el gestor de cookies
+// Initialize the cookie manager
 cookieManager.init();
