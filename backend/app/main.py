@@ -39,6 +39,7 @@ logging.basicConfig(level=logging.INFO)
 async def cleanup_expired_and_deleted_users():
     while True:
         try:
+            logging.info("Starting cleanup process...")
             with open(settings.DATA_FILE, 'r') as f:
                 data = json.load(f)
 
@@ -50,6 +51,7 @@ async def cleanup_expired_and_deleted_users():
                 if user.get("expires_at"):
                     expires_at = datetime.fromisoformat(user["expires_at"])
                     if datetime.utcnow() > expires_at:
+                        logging.info(f"User {user['email']} has expired.")
                         # Encontrar todas las sesiones del usuario
                         for session in data.get("sessions", []):
                             if session.get("user_id") == user["email"] and session.get("active"):
@@ -64,6 +66,7 @@ async def cleanup_expired_and_deleted_users():
             user_emails = {user["email"] for user in data.get("users", [])}
             for session in data.get("sessions", []):
                 if session.get("user_id") not in user_emails and session.get("active"):
+                    logging.info(f"Session for user {session['user_id']} is inactive as user is deleted.")
                     account_id = session.get("account_id")
                     if account_id:
                         account_sessions[account_id] = account_sessions.get(account_id, 0) + 1
@@ -75,19 +78,24 @@ async def cleanup_expired_and_deleted_users():
             if account_sessions:
                 for account in data.get("accounts", []):
                     if account["id"] in account_sessions:
+                        logging.info(f"Updating active user count for account {account['id']}.")
                         account["active_users"] = max(0, account["active_users"] - account_sessions[account["id"]])
                         modified = True
 
             # Eliminar sesiones inactivas
+            initial_session_count = len(data.get("sessions", []))
             data["sessions"] = [session for session in data.get("sessions", []) if session["active"]]
+            final_session_count = len(data["sessions"])
+            logging.info(f"Removed {initial_session_count - final_session_count} inactive sessions.")
 
             # Guardar cambios si hubo modificaciones
             if modified:
                 with open(settings.DATA_FILE, 'w') as f:
                     json.dump(data, f, indent=2)
+                logging.info("Data file updated successfully.")
 
         except Exception as e:
-            print(f"Error in cleanup_expired_and_deleted_users: {e}")
+            logging.error(f"Error in cleanup_expired_and_deleted_users: {e}")
 
         await asyncio.sleep(120)  # Esperar 2 minutos
 
