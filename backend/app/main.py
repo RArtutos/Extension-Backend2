@@ -31,6 +31,11 @@ app.include_router(presets.router, prefix="/api/admin/presets", tags=["admin-pre
 app.include_router(admin_accounts.router, prefix="/api/admin/accounts", tags=["admin-accounts"])
 app.include_router(delete.router, prefix="/delete", tags=["delete"])
 
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+
 async def cleanup_expired_and_deleted_users():
     while True:
         try:
@@ -72,6 +77,9 @@ async def cleanup_expired_and_deleted_users():
                     if account["id"] in account_sessions:
                         account["active_users"] = max(0, account["active_users"] - account_sessions[account["id"]])
                         modified = True
+
+            # Eliminar sesiones inactivas
+            data["sessions"] = [session for session in data.get("sessions", []) if session["active"]]
 
             # Guardar cambios si hubo modificaciones
             if modified:
