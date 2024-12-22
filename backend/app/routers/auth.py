@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from datetime import datetime
 from ..core.auth import (
     verify_password, 
     create_access_token, 
@@ -9,7 +10,6 @@ from ..core.auth import (
 )
 from ..core.config import settings
 from ..db.database import Database
-from datetime import datetime
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -23,6 +23,15 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
         )
+    
+    # Verificar si el usuario ha expirado
+    if user.get("expires_at"):
+        expires_at = datetime.fromisoformat(user["expires_at"])
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account has expired"
+            )
     
     # Verificar límite de dispositivos
     if user["active_sessions"] >= user.get("max_devices", 1):
@@ -62,9 +71,27 @@ async def logout(current_user: dict = Depends(get_current_user)):
 
 @router.get("/validate")
 async def validate_token(current_user: dict = Depends(get_current_user)):
+    # Verificar si el usuario ha expirado
+    if current_user.get("expires_at"):
+        expires_at = datetime.fromisoformat(current_user["expires_at"])
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account has expired"
+            )
+    
+    # Verificar si el usuario está activo
+    if not current_user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive"
+        )
+    
     return {
         "email": current_user["email"],
         "is_admin": current_user.get("is_admin", False),
         "active_sessions": current_user.get("active_sessions", 0),
-        "max_devices": current_user.get("max_devices", 1)
+        "max_devices": current_user.get("max_devices", 1),
+        "expires_at": current_user.get("expires_at"),
+        "is_active": current_user.get("is_active", True)
     }
