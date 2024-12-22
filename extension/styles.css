@@ -176,12 +176,42 @@ body {
 
 .account-info {
     flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.account-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    object-fit: cover;
+    background-color: var(--background-color);
+    flex-shrink: 0;
+}
+
+.account-icon.default {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.account-details {
+    flex: 1;
+    min-width: 0;
 }
 
 .account-name {
     font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .account-group {
@@ -239,6 +269,7 @@ body {
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
 }
 
 .switch-btn:hover:not(:disabled) {
