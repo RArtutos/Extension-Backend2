@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers import auth, accounts, proxies, analytics, sessions, delete
 from .routers.admin import users, analytics as admin_analytics, presets, accounts as admin_accounts
 from .core.config import settings
+from .db.repositories.session_repository import SessionRepository
 from datetime import datetime
 import asyncio
 import json
@@ -36,6 +37,8 @@ import logging
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 
+session_repo = SessionRepository()  # Crear una instancia de SessionRepository
+
 async def cleanup_expired_and_deleted_users():
     while True:
         try:
@@ -44,7 +47,6 @@ async def cleanup_expired_and_deleted_users():
                 data = json.load(f)
 
             modified = False
-            account_sessions = {}  # Para contar sesiones por cuenta
 
             # Verificar usuarios expirados
             for user in data.get("users", []):
@@ -52,48 +54,27 @@ async def cleanup_expired_and_deleted_users():
                     expires_at = datetime.fromisoformat(user["expires_at"])
                     if datetime.utcnow() > expires_at:
                         logging.info(f"User {user['email']} has expired.")
-                        # Encontrar todas las sesiones del usuario
-                        for session in data.get("sessions", []):
-                            if session.get("user_id") == user["email"] and session.get("active"):
-                                account_id = session.get("account_id")
-                                if account_id:
-                                    account_sessions[account_id] = account_sessions.get(account_id, 0) + 1
-                                session["active"] = False
-                                session["end_time"] = datetime.utcnow().isoformat()
+                        sessions_to_remove = [
+                            session for session in data.get("sessions", [])
+                            if session.get("user_id") == user["email"] and session.get("active")
+                        ]
+                        for session in sessions_to_remove:
+                            if session_repo.delete_session(session["id"]):
                                 modified = True
 
             # Verificar usuarios eliminados
             user_emails = {user["email"] for user in data.get("users", [])}
-            for session in data.get("sessions", []):
-                if session.get("user_id") not in user_emails and session.get("active"):
-                    logging.info(f"Session for user {session['user_id']} is inactive as user is deleted.")
-                    account_id = session.get("account_id")
-                    if account_id:
-                        account_sessions[account_id] = account_sessions.get(account_id, 0) + 1
-                    session["active"] = False
-                    session["end_time"] = datetime.utcnow().isoformat()
+            sessions_to_remove = [
+                session for session in data.get("sessions", [])
+                if session.get("user_id") not in user_emails and session.get("active")
+            ]
+            for session in sessions_to_remove:
+                logging.info(f"Session for user {session['user_id']} is inactive as user is deleted.")
+                if session_repo.delete_session(session["id"]):
                     modified = True
 
-            # Actualizar contadores de usuarios activos en las cuentas
-            if account_sessions:
-                for account in data.get("accounts", []):
-                    if account["id"] in account_sessions:
-                        logging.info(f"Updating active user count for account {account['id']}.")
-                        account["active_users"] = max(0, account["active_users"] - account_sessions[account["id"]])
-                        modified = True
-
-            # Eliminar sesiones inactivas
-            initial_session_count = len(data.get("sessions", []))
-            data["sessions"] = [session for session in data.get("sessions", []) if session["active"]]
-            final_session_count = len(data["sessions"])
-            logging.info(f"Removed {initial_session_count - final_session_count} inactive sessions.")
-
-            # Guardar cambios si hubo modificaciones
             if modified:
-                with open(settings.DATA_FILE, 'w') as f:
-                    json.dump(data, f, indent=2)
-                logging.info("Data file updated successfully.")
-
+                logging.info("Cleanup process completed and data file updated successfully.")
         except Exception as e:
             logging.error(f"Error in cleanup_expired_and_deleted_users: {e}")
 
