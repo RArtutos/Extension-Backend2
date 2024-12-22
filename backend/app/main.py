@@ -31,7 +31,7 @@ app.include_router(presets.router, prefix="/api/admin/presets", tags=["admin-pre
 app.include_router(admin_accounts.router, prefix="/api/admin/accounts", tags=["admin-accounts"])
 app.include_router(delete.router, prefix="/delete", tags=["delete"])
 
-async def cleanup_expired_users():
+async def cleanup_expired_and_deleted_users():
     while True:
         try:
             with open(settings.DATA_FILE, 'r') as f:
@@ -55,6 +55,17 @@ async def cleanup_expired_users():
                                 session["end_time"] = datetime.utcnow().isoformat()
                                 modified = True
 
+            # Verificar usuarios eliminados
+            user_emails = {user["email"] for user in data.get("users", [])}
+            for session in data.get("sessions", []):
+                if session.get("user_id") not in user_emails and session.get("active"):
+                    account_id = session.get("account_id")
+                    if account_id:
+                        account_sessions[account_id] = account_sessions.get(account_id, 0) + 1
+                    session["active"] = False
+                    session["end_time"] = datetime.utcnow().isoformat()
+                    modified = True
+
             # Actualizar contadores de usuarios activos en las cuentas
             if account_sessions:
                 for account in data.get("accounts", []):
@@ -68,11 +79,11 @@ async def cleanup_expired_users():
                     json.dump(data, f, indent=2)
 
         except Exception as e:
-            print(f"Error in cleanup_expired_users: {e}")
+            print(f"Error in cleanup_expired_and_deleted_users: {e}")
 
         await asyncio.sleep(120)  # Esperar 2 minutos
 
 @app.on_event("startup")
 async def startup_event():
     settings.init_data_file()
-    asyncio.create_task(cleanup_expired_users())
+    asyncio.create_task(cleanup_expired_and_deleted_users())
