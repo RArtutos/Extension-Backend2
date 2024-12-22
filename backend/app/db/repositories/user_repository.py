@@ -77,6 +77,38 @@ class UserRepository(BaseRepository):
         self._write_data(data)
         return user_data
 
+    def update(self, email: str, user_data: Dict) -> Optional[Dict]:
+        """Update an existing user"""
+        data = self._read_data()
+        user_index = next(
+            (i for i, u in enumerate(data.get("users", []))
+             if u["email"] == email),
+            None
+        )
+        
+        if user_index is None:
+            return None
+            
+        user = data["users"][user_index]
+        
+        # Process expiration if provided
+        if "expires_in_days" in user_data:
+            expires_in_days = user_data.pop("expires_in_days")
+            if expires_in_days:
+                user_data["expires_at"] = (datetime.utcnow() + timedelta(days=expires_in_days)).isoformat()
+            else:
+                user_data["expires_at"] = None
+                
+        # Hash password if provided
+        if "password" in user_data and user_data["password"]:
+            user_data["password"] = get_password_hash(user_data["password"])
+        elif "password" in user_data:
+            del user_data["password"]
+            
+        user.update(user_data)
+        self._write_data(data)
+        return user
+
     def delete(self, email: str) -> bool:
         """Delete a user"""
         data = self._read_data()
@@ -90,39 +122,8 @@ class UserRepository(BaseRepository):
         if len(data["users"]) < initial_count:
             self._write_data(data)
             return True
-        return False      
-
-    def update_active_sessions(self, email: str, count: int) -> bool:
-        """Update active sessions count for a user"""
-        data = self._read_data()
-        user_index = next(
-            (i for i, u in enumerate(data.get("users", []))
-             if u["email"] == email),
-            None
-        )
-        
-        if user_index is not None:
-            data["users"][user_index]["active_sessions"] = max(0, count)
-            self._write_data(data)
-            return True
         return False
 
-    def get_by_email(self, email: str) -> Optional[Dict]:
-        """Get user by email"""
-        data = self._read_data()
-        user = next((user for user in data.get("users", []) if user["email"] == email), None)
-        
-        if user:
-            if user.get("expires_at"):
-                expires_at = datetime.fromisoformat(user["expires_at"])
-                if datetime.utcnow() > expires_at:
-                    return None
-                    
-            user["assigned_accounts"] = [
-                ua["account_id"] for ua in data.get("user_accounts", []) 
-                if ua["user_id"] == email
-            ]
-        return user
     def update_active_sessions(self, email: str, count: int) -> bool:
         """Update active sessions count for a user"""
         data = self._read_data()

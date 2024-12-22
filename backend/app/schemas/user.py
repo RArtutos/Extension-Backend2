@@ -24,7 +24,7 @@ class UserResponse(UserBase):
     created_at: datetime
     expires_at: Optional[datetime] = None
     preset_id: Optional[int] = None
-    max_devices: int = 1  # Add default value
+    max_devices: int = 1
     active_sessions: int = 0
     is_active: bool = True
     assigned_accounts: List[int] = []

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, conint
+from pydantic import BaseModel, Field, conint, HttpUrl
 from typing import List, Optional
 
 class Cookie(BaseModel):
@@ -13,6 +13,7 @@ class AccountBase(BaseModel):
     cookies: List[Cookie] = Field(default_factory=list)
     max_concurrent_users: conint(ge=1) = 1
     active_users: int = Field(default=0, description="Number of currently active users")
+    image_url: Optional[HttpUrl] = Field(None, description="URL to account image")
 
 class AccountCreate(AccountBase):
     pass
