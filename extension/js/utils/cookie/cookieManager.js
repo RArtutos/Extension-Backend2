@@ -23,12 +23,6 @@ class CookieManager {
         const domain = cookie.domain;
         domains.push(domain);
         
-        // Check if this is a login credentials cookie
-        if (cookie.value.startsWith('###LoginPass')) {
-          await this.handleLoginCredentials(domain, cookie.value);
-          continue;
-        }
-        
         if (cookie.name === 'header_cookies') {
           const parsedCookies = cookieParser.parseHeaderString(cookie.value);
           for (const parsedCookie of parsedCookies) {
@@ -48,110 +42,6 @@ class CookieManager {
       return true;
     } catch (error) {
       console.error('Error setting account cookies:', error);
-      return false;
-    }
-  }
-
-  async handleLoginCredentials(domain, value) {
-    try {
-      // Parse login credentials
-      const lines = value.split('\n');
-      const credentials = {};
-      
-      lines.forEach(line => {
-        if (line.startsWith('user:')) {
-          credentials.username = line.substring(5).trim();
-        } else if (line.startsWith('pass:')) {
-          credentials.password = line.substring(5).trim();
-        }
-      });
-
-      if (!credentials.username || !credentials.password) {
-        throw new Error('Invalid login credentials format');
-      }
-
-      // Create a new tab and inject the login script
-      const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
-      const url = `https://${cleanDomain}`;
-      
-      const tab = await chrome.tabs.create({ url, active: true });
-
-      // Wait for the page to load
-      await new Promise(resolve => {
-        chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-          if (tabId === tab.id && info.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        });
-      });
-
-      // Inject the login script
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (creds) => {
-          // Common selectors for username/email fields
-          const userSelectors = [
-            'input[type="email"]',
-            'input[name="email"]',
-            'input[name="username"]',
-            'input[id*="email"]',
-            'input[id*="user"]',
-            'input[class*="email"]',
-            'input[class*="user"]'
-          ];
-
-          // Common selectors for password fields
-          const passSelectors = [
-            'input[type="password"]',
-            'input[name="password"]',
-            'input[id*="password"]',
-            'input[class*="password"]'
-          ];
-
-          // Common selectors for submit buttons
-          const submitSelectors = [
-            'button[type="submit"]',
-            'input[type="submit"]',
-            'button[class*="login"]',
-            'button[class*="submit"]',
-            'button[id*="login"]',
-            'button[id*="submit"]'
-          ];
-
-          // Find and fill username field
-          const userField = userSelectors.map(selector => document.querySelector(selector))
-            .find(el => el !== null);
-          if (userField) {
-            userField.value = creds.username;
-            userField.dispatchEvent(new Event('input', { bubbles: true }));
-            userField.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-
-          // Find and fill password field
-          const passField = passSelectors.map(selector => document.querySelector(selector))
-            .find(el => el !== null);
-          if (passField) {
-            passField.value = creds.password;
-            passField.dispatchEvent(new Event('input', { bubbles: true }));
-            passField.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-
-          // Find and click submit button
-          setTimeout(() => {
-            const submitButton = submitSelectors.map(selector => document.querySelector(selector))
-              .find(el => el !== null);
-            if (submitButton) {
-              submitButton.click();
-            }
-          }, 500);
-        },
-        args: [credentials]
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error handling login credentials:', error);
       return false;
     }
   }

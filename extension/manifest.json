@@ -7,8 +7,7 @@
     "storage",
     "cookies",
     "tabs",
-    "activeTab",
-    "scripting"
+    "activeTab"
   ],
   "host_permissions": [
     "http://*/*",
