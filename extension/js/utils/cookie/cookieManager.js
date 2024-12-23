@@ -1,18 +1,19 @@
 import { storage } from '../storage.js';
 import { sessionService } from '../../services/sessionService.js';
 import { httpClient } from '../httpClient.js';
+import { cookieParser } from './cookieParser.js';
 
 class CookieManager {
   constructor() {
     this.managedDomains = new Set();
     this.maxRetries = 3;
-    this.retryDelay = 50; // 500ms entre reintentos
+    this.retryDelay = 100;
   }
 
   async setAccountCookies(account) {
     if (!account?.cookies?.length) {
       console.warn('No cookies found for account');
-      return;
+      return false;
     }
 
     try {
@@ -23,9 +24,12 @@ class CookieManager {
         domains.push(domain);
         
         if (cookie.name === 'header_cookies') {
-          await this.setHeaderCookiesWithVerification(domain, cookie.value);
+          const parsedCookies = cookieParser.parseHeaderString(cookie.value);
+          for (const parsedCookie of parsedCookies) {
+            await this.setCookieWithRetry(domain, parsedCookie.name, parsedCookie.value);
+          }
         } else {
-          await this.setCookieWithVerification(domain, cookie.name, cookie.value);
+          await this.setCookieWithRetry(domain, cookie.name, cookie.value);
         }
       }
 
@@ -35,97 +39,60 @@ class CookieManager {
         domains: Array.from(this.managedDomains)
       });
 
-      // Verificación final de todas las cookies
-      const allCookiesSet = await this.verifyAllCookies(account);
-      if (!allCookiesSet) {
-        console.warn('Some cookies failed to set after all retries');
-      }
-
-      return allCookiesSet;
-
+      return true;
     } catch (error) {
       console.error('Error setting account cookies:', error);
-      throw new Error('Failed to set account cookies');
+      return false;
     }
   }
 
-  async verifyAllCookies(account) {
-    for (const cookie of account.cookies) {
-      const domain = cookie.domain;
-      const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
-      
-      if (cookie.name === 'header_cookies') {
-        const headerCookies = this.parseHeaderString(cookie.value);
-        for (const headerCookie of headerCookies) {
-          const isSet = await this.verifyCookie(cleanDomain, headerCookie.name);
-          if (!isSet) return false;
+  async setCookieWithRetry(domain, name, value) {
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        await this.setCookie(domain, name, value);
+        return true;
+      } catch (error) {
+        if (attempt === this.maxRetries - 1) {
+          console.error(`Failed to set cookie ${name} after ${this.maxRetries} attempts`);
+          throw error;
         }
-      } else {
-        const isSet = await this.verifyCookie(cleanDomain, cookie.name);
-        if (!isSet) return false;
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay));
       }
     }
-    return true;
-  }
-
-  async verifyCookie(domain, name) {
-    const cookies = await chrome.cookies.getAll({ domain, name });
-    return cookies.length > 0;
-  }
-
-  async setCookieWithVerification(domain, name, value) {
-    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
-      await this.setCookie(domain, name, value);
-      
-      // Verificar si la cookie se estableció correctamente
-      const isSet = await this.verifyCookie(domain.startsWith('.') ? domain.substring(1) : domain, name);
-      if (isSet) return true;
-      
-      // Esperar antes de reintentar
-      await new Promise(resolve => setTimeout(resolve, this.retryDelay));
-    }
     return false;
-  }
-
-  async setHeaderCookiesWithVerification(domain, cookieString) {
-    if (!cookieString) return true;
-    
-    const cookies = this.parseHeaderString(cookieString);
-    for (const cookie of cookies) {
-      const success = await this.setCookieWithVerification(domain, cookie.name, cookie.value);
-      if (!success) return false;
-    }
-    return true;
   }
 
   async setCookie(domain, name, value) {
     const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
     const url = `https://${cleanDomain}`;
     
+    const cookieConfig = {
+      url,
+      name,
+      value,
+      path: '/',
+      secure: true,
+      sameSite: 'lax'
+    };
+
+    // No incluir domain para cookies __Host-
+    if (!name.startsWith('__Host-')) {
+      cookieConfig.domain = domain;
+    }
+
     try {
-      await chrome.cookies.set({
-        url,
-        name,
-        value,
-        domain,
-        path: '/',
-        secure: true,
-        sameSite: 'lax'
-      });
+      await chrome.cookies.set(cookieConfig);
     } catch (error) {
-      console.warn(`Error setting cookie ${name}, retrying with alternative settings:`, error);
-      try {
+      if (!name.startsWith('__Host-')) {
+        // Intentar configuración alternativa solo para cookies que no son __Host-
         await chrome.cookies.set({
-          url,
-          name,
-          value,
+          ...cookieConfig,
           domain: cleanDomain,
-          path: '/',
           secure: false,
           sameSite: 'no_restriction'
         });
-      } catch (retryError) {
-        console.error(`Failed to set cookie ${name} after retry:`, retryError);
+      } else {
+        throw error;
       }
     }
   }
@@ -134,26 +101,29 @@ class CookieManager {
     if (!account?.cookies?.length) return;
     
     try {
-      await sessionService.endSession(account.id, this.getDomain(account));
+      const domain = this.getDomain(account);
+      await sessionService.endSession(account.id, domain);
+      await this.removeAllCookiesForDomain(domain);
     } catch (error) {
       console.error('Error removing account cookies:', error);
     }
   }
 
-  parseHeaderString(cookieString) {
-    if (!cookieString) return [];
+  async removeAllCookiesForDomain(domain) {
+    const cleanDomain = domain.startsWith('.') ? domain.substring(1) : domain;
+    const cookies = await chrome.cookies.getAll({ domain: cleanDomain });
     
-    const cookies = [];
-    const pairs = cookieString.split(';');
-    
-    for (const pair of pairs) {
-      const [name, value] = pair.trim().split('=');
-      if (name && value) {
-        cookies.push({ name: name.trim(), value: value.trim() });
+    for (const cookie of cookies) {
+      try {
+        const protocol = cookie.secure ? 'https://' : 'http://';
+        await chrome.cookies.remove({
+          url: `${protocol}${cleanDomain}${cookie.path}`,
+          name: cookie.name
+        });
+      } catch (error) {
+        console.warn(`Error removing cookie ${cookie.name}:`, error);
       }
     }
-    
-    return cookies;
   }
 
   getDomain(account) {
