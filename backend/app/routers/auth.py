@@ -33,15 +33,19 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
                 detail="User account has expired"
             )
     
+    # Asegurarse de que active_sessions esté inicializado
+    active_sessions = user.get("active_sessions", 0)
+    max_devices = user.get("max_devices", 1)
+    
     # Verificar límite de dispositivos
-    if user["active_sessions"] >= user.get("max_devices", 1):
+    if active_sessions >= max_devices:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum number of devices reached"
         )
     
     # Incrementar active_sessions
-    db.users.update_active_sessions(user["email"], user["active_sessions"] + 1)
+    db.users.update_active_sessions(user["email"], active_sessions + 1)
     
     # Registrar analítica de login
     db.analytics.create_activity({
@@ -58,7 +62,8 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 @router.post("/logout")
 async def logout(current_user: dict = Depends(get_current_user)):
     # Decrementar active_sessions
-    db.users.update_active_sessions(current_user["email"], max(0, current_user["active_sessions"] - 1))
+    active_sessions = current_user.get("active_sessions", 1)
+    db.users.update_active_sessions(current_user["email"], max(0, active_sessions - 1))
     
     # Registrar analítica de logout
     db.analytics.create_activity({
